@@ -65,6 +65,16 @@ STAMP_FILE="$BUILD_DIR/dxvk.stamp"
 
 EXPECTED_LIBS=(libdxvk_d3d11.so libdxvk_dxgi.so)
 
+# What the cache check must find for a rebuild to be skippable: the libraries
+# AND the SONAME aliases, because build.sh asserts on the aliases too. Checking
+# only the bare .so names would let a missing libdxvk_d3d11.so.0 report
+# "cached, skipping rebuild" and then fail the caller's assertion, recoverable
+# only by a full ~10-minute --clean rebuild.
+EXPECTED_STAGED=(
+    libdxvk_d3d11.so libdxvk_d3d11.so.0
+    libdxvk_dxgi.so  libdxvk_dxgi.so.0
+)
+
 CLEAN=0
 for arg in "$@"; do
     case "$arg" in
@@ -88,8 +98,8 @@ mkdir -p "$BUILD_DIR" "$LIBRARIES_DIR"
 # ---- cache check ------------------------------------------------------------
 
 ALL_LIBS_PRESENT=1
-for lib in "${EXPECTED_LIBS[@]}"; do
-    [ -f "$LIBRARIES_DIR/$lib" ] || ALL_LIBS_PRESENT=0
+for lib in "${EXPECTED_STAGED[@]}"; do
+    [ -e "$LIBRARIES_DIR/$lib" ] || ALL_LIBS_PRESENT=0
 done
 
 if [ "$CLEAN" = "1" ]; then

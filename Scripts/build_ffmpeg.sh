@@ -349,9 +349,16 @@ if [ "$RUNPATH_MISSING" = "1" ]; then
 fi
 
 # ---- copy into the Libraries folder -------------------------------------------
-# Wipe the destination first so a previously shipped, larger SOVERSION can't
-# linger and shadow the freshly built one (FFmpeg.AutoGen scans for the
-# highest match in LibraryVersionMap order).
+# Wipe the previously staged FFmpeg files first. Without this, bumping
+# FFMPEG_VERSION on an existing build/ tree leaves the old fully-versioned
+# libraries behind AND leaves libavcodec.so / libavcodec.so.62 pointing at
+# them, so the archive would ship two FFmpeg builds with the unversioned
+# aliases resolving to the stale one. Only FFmpeg's own names are removed --
+# the sibling build scripts and build.sh populate this same directory.
+
+echo "==> Clearing previously staged FFmpeg libs from $LIBRARIES_DIR"
+find "$LIBRARIES_DIR" -maxdepth 1 \
+     \( -name 'libav*.so*' -o -name 'libsw*.so*' \) -delete
 
 echo "==> Staging outputs into $LIBRARIES_DIR"
 # Copy realpath files first, then recreate the symlink chain. This avoids
@@ -362,12 +369,13 @@ for f in "$LIB_SRC"/lib*.so.*; do
     cp -a "$f" "$LIBRARIES_DIR/$(basename "$f")"
 done
 
+# -sfn, not a skip-if-exists guard: the aliases must always be re-pointed at
+# the build we just staged.
 for link in "$LIB_SRC"/lib*.so*; do
     [ -L "$link" ] || continue
     target="$(readlink "$link")"   # relative target name, e.g. libavcodec.so.62.0.100
     name="$(basename "$link")"
-    [ -e "$LIBRARIES_DIR/$name" ] && continue
-    ln -s "$target" "$LIBRARIES_DIR/$name"
+    ln -sfn "$target" "$LIBRARIES_DIR/$name"
 done
 
 echo

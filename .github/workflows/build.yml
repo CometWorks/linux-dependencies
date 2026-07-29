@@ -71,7 +71,12 @@ jobs:
           path: dist/linux-dependencies.tar.gz
           if-no-files-found: error
 
+      # Skipped for pull requests from forks: GITHUB_TOKEN is read-only for
+      # those regardless of the permissions block above, so creating a release
+      # would 403 and turn every external contribution red. The build itself
+      # still runs, and the archive is available as the workflow artifact.
       - name: Publish release
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -95,9 +100,14 @@ jobs:
             tag="pr-${{ github.event.pull_request.number }}"
             gh release delete "$tag" \
               --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
+            # --target pins the (as yet unmaterialized) tag to the PR head.
+            # Without it gh anchors the draft to the default branch, so a
+            # maintainer who publishes the draft would tag main rather than
+            # the commit the archive was actually built from.
             gh release create "$tag" \
               --repo "${{ github.repository }}" \
               --draft \
+              --target "${{ github.event.pull_request.head.sha }}" \
               --title "Linux Dependencies (PR #${{ github.event.pull_request.number }})" \
               --notes "Draft build for PR #${{ github.event.pull_request.number }} (commit ${{ github.event.pull_request.head.sha }})." \
               "$asset"

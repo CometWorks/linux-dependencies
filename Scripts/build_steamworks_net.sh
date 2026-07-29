@@ -128,7 +128,9 @@ dotnet build -c Release -v minimal "$CSPROJ"
 # Standalone3.0/bin/Release/net8.0/. `find` the dll rather than hard-coding
 # the path so a future TFM bump still works.
 
-DLL_SRC="$(find "$CLONE_DIR/Standalone3.0/bin/Release" -type f -name "$DLL_NAME" -print -quit)"
+# `|| true` so a missing bin/Release/ reaches the friendly error below instead
+# of aborting on find's own "No such file or directory" via set -e.
+DLL_SRC="$(find "$CLONE_DIR/Standalone3.0/bin/Release" -type f -name "$DLL_NAME" -print -quit 2>/dev/null || true)"
 if [ -z "$DLL_SRC" ]; then
     echo "ERROR: dotnet build did not produce $DLL_NAME under $CLONE_DIR/Standalone3.0/bin/Release" >&2
     exit 1

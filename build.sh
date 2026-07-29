@@ -87,6 +87,23 @@ if [ -n "$ONLY" ] || [ -n "$SKIP" ]; then
     FILTERED=1
 fi
 
+# Reject unknown step names. Without this a typo (--only=steamworks_net with an
+# underscore) matches nothing, silently skips every build, and reports only
+# that staging is incomplete.
+STEP_NAMES="ffmpeg dxvk steamworks-net"
+for spec in "$ONLY" "$SKIP"; do
+    [ -n "$spec" ] || continue
+    IFS=',' read -ra names <<< "$spec"
+    for name in "${names[@]}"; do
+        case " $STEP_NAMES " in
+            *" $name "*) ;;
+            *) echo "ERROR: unknown step name: $name" >&2
+               echo "       Valid names: $STEP_NAMES" >&2
+               exit 2 ;;
+        esac
+    done
+done
+
 want_step() {
     # want_step <name> -> 0 if the step should run, 1 otherwise.
     local name="$1"
@@ -218,7 +235,7 @@ done
 if [ "$MISSING" = "1" ]; then
     if [ "$FILTERED" = "1" ]; then
         echo "Note: --only/--skip filters were active; partial staging is expected." >&2
-        exit 1
+        exit 0
     fi
     echo "ERROR: dependency staging is incomplete." >&2
     exit 1
