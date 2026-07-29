@@ -1,0 +1,170 @@
+# Dependencies
+
+Every library in the release archive, where it comes from, and how it is
+pinned. To change any of these, see [maintenance.md](maintenance.md).
+
+## Summary
+
+| Dependency | Version / pin | Licence | Built by |
+| --- | --- | --- | --- |
+| FFmpeg | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
+| DXVK Native | tag `v2.7.1` | zlib | `Scripts/build_dxvk.sh` |
+| Steamworks.NET | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
+| EOS SDK | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
+| Steamworks SDK | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
+
+---
+
+## FFmpeg 8.1
+
+**Produces:** `libavcodec.so.62`, `libavformat.so.62`, `libavutil.so.60`,
+`libswresample.so.6`, `libswscale.so.9`, each with an unversioned `.so` alias
+and a fully-versioned real file.
+
+**Source:** `https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz`, downloaded and
+cached under `build/`.
+
+**Consumed by:** Pulsar's audio and video playback, through FFmpeg.AutoGen 8.1.
+The SOVERSIONs are not incidental — `ClientPlugin/Audio/MySdlAudioInterop.cs`
+in Pulsar contains a `LibraryVersionMap` that names them explicitly, so a
+SOVERSION bump on either side without the other produces a
+`DllNotFoundException` at runtime. `build_ffmpeg.sh` has an `EXPECTED_SOVER`
+table that fails the build if the versions shift.
+
+### Why the build is configured the way it is
+
+The goal is a set of libraries that depend on nothing but glibc and zlib, so
+they run on any reasonably modern distribution without dragging in the build
+host's codec stack. Every optional backend is disabled:
+
+| Flag group | Effect |
+| --- | --- |
+| `--disable-programs`, `--disable-doc`, `--disable-*pages` | No `ffmpeg`/`ffplay`/`ffprobe` binaries or documentation — we only want libraries |
+| `--disable-network` | Drops the TLS/SCTP/OpenSSL/GnuTLS dependency chain |
+| `--disable-avdevice` | Skips the ALSA / PulseAudio / X11-grab / SDL input backends, and with them the implicit libxcb, libjack and libpulse pulls |
+| `--disable-avfilter` | We only decode; no filter graph needed |
+| `--disable-vaapi`, `--disable-vdpau`, `--disable-vulkan`, `--disable-libdrm`, `--disable-xlib` | No hardware-acceleration or display-server dependencies |
+| `--disable-bzlib`, `--disable-lzma`, `--disable-iconv` | Drops bzip2 / xz / libiconv |
+| `--disable-sdl2`, `--disable-alsa` | SDL3 is handled separately; FFmpeg's SDL support is only for `ffplay` |
+| `--enable-shared`, `--disable-static`, `--enable-pic` | `.so` output only — a static `.a` cannot be P/Invoked from .NET |
+| `--extra-ldflags=-Wl,-Bsymbolic` | Prefer in-library symbol resolution, so an unrelated `.so` or an `LD_PRELOAD` on the host cannot intercept FFmpeg-internal calls |
+| `--cpu=x86-64-v2` | See below |
+
+**zlib is deliberately left enabled.** Several muxers and demuxers (MOV,
+Matroska) need it for compressed metadata, and zlib is present on every modern
+Linux target, so it is not a portability concern.
+
+**`--cpu=x86-64-v2`** pins the baseline instruction set to match .NET 10's
+documented x64 minimum (CX16, POPCNT, SSE3, SSSE3, SSE4.1, SSE4.2 — Sandy
+Bridge / Bulldozer, 2011 and newer). FFmpeg keeps its runtime SIMD dispatch on
+top of this, so AVX/AVX2/AVX-512 paths are still selected on capable CPUs. The
+flag only constrains the non-dispatched scalar code, and it stops a build host
+with `CFLAGS=-march=native` from accidentally specializing the shipped
+libraries to that machine.
+
+**`--enable-gpl` and `--enable-nonfree` are NOT used**, so no GPL- or
+nonfree-licensed FFmpeg components are linked in and the binaries are
+distributable under the LGPL alone. The LGPL relinking notice shipped in the
+archive (`LICENSES/FFmpeg-README.txt`) points back at `build_ffmpeg.sh` as the
+authoritative build configuration, which is a licence obligation — keep that
+pointer accurate.
+
+### Post-build verification
+
+1. **SOVERSION check** against the `EXPECTED_SOVER` table.
+2. **`patchelf --set-rpath '$ORIGIN'`** on each library. This is done as a
+   post-build rewrite rather than via `--extra-ldsoflags` because passing the
+   literal `$ORIGIN` token through bash → FFmpeg's `configure` (sh) →
+   `config.mak` → make → the recipe shell needs three layers of `$`-escaping
+   that must survive both sh's `$$` → PID substitution and make's `$$` → `$`
+   rule. At least one of those layers has been observed to break on FFmpeg 8.1,
+   putting a literal PID into `DT_RUNPATH`. `patchelf` edits the `.dynamic`
+   section after linking and is immune to all of it.
+3. **`ldd` allow-list** — anything outside glibc, libz and the FFmpeg
+   libraries themselves fails the build, which catches a disable flag that
+   stopped working after an upstream change.
+4. **`readelf` re-check** that `DT_RUNPATH` really is `$ORIGIN`, so a broken or
+   missing `patchelf` step fails loudly instead of shipping libraries that
+   silently need `LD_LIBRARY_PATH`.
+
+---
+
+## DXVK Native 2.7.1
+
+**Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so`, each with a `.so.0`
+SONAME symlink.
+
+**Source:** `https://github.com/doitsujin/dxvk.git` at tag `v2.7.1`, shallow
+clone with submodules, cached under `build/dxvk/`.
+
+**Consumed by:** Pulsar only. Magnetar is headless and does not need a D3D11
+implementation. (The archive is shared, so Magnetar simply ignores these two
+files — see [consuming.md](consuming.md).)
+
+**How it is built:** by shelling out to upstream's own `package-native.sh`
+helper with `--64-only --no-package`, rather than re-implementing the meson
+invocation here. That script is short and stable across recent DXVK releases,
+so upstream build tweaks are picked up for free. `--64-only` skips the 32-bit
+build (Space Engineers is x86_64-only) and `--no-package` skips upstream's
+tarball step, since only the installed `.so` files are wanted.
+
+The output `.so` files are located with `find` rather than a hard-coded path,
+so an upstream rearrangement (`usr/lib64/`, a multiarch subdirectory) does not
+silently break staging. They then get the same `DT_RUNPATH=$ORIGIN` treatment
+as the FFmpeg libraries.
+
+**Caching:** `build/dxvk.stamp` records the built version. A rerun with the
+same `DXVK_VERSION` and all outputs present skips the build entirely.
+
+---
+
+## Steamworks.NET
+
+**Produces:** `Steamworks.NET.dll` (managed, `net8.0`).
+
+**Source:** `https://github.com/rlabrecque/Steamworks.NET.git` at commit
+`68e72a49caf03a07722d4d4b471bbc7c0785f80b`, built from
+`Standalone3.0/Steamworks.NET.csproj` with `dotnet build -c Release`.
+
+**Consumed by:** both Pulsar and Magnetar, as an assembly reference in their
+`Shared/Shared.csproj`.
+
+**Why a commit and not a tag:** rlabrecque's tags track Steamworks SDK
+versions, but the `.dll` both consumers historically shipped was built straight
+from a HEAD commit. That commit SHA is embedded in the old binary's
+`AssemblyInformationalVersion`, and it is the value pinned here, so the
+rebuilt assembly matches what the consumers were already using.
+
+The pinned commit lives on a pull-request ref (PR #738, "Upgrade Steamworks SDK
+to v1.64"), which a plain `git clone` does not fetch. The script tries a direct
+checkout first and, on failure, fetches `refs/pull/*/head` and retries — so the
+pin keeps working whether or not that PR is ever merged.
+
+**Caching:** `build/steamworks-net.stamp` records the built commit SHA.
+
+---
+
+## Vendor blobs
+
+Two proprietary runtimes are committed under `Vendor/` rather than built:
+
+* **`libEOSSDK-Linux-Shipping.so`** — the Epic Online Services SDK runtime.
+  Needed by both consumers: Pulsar for the client's EOS integration, and
+  Magnetar because `MySteamService.UpdateNetworkThread` drives
+  `MyEOSNetworking` even under Steam-only networking.
+* **`libsteam_api.so`** — the Steamworks SDK runtime.
+
+Neither has a public source repository or a publicly fetchable binary; both
+downloads are gated behind logged-in partner portals. Updating them is a manual
+maintainer task documented in [maintenance.md](maintenance.md) and in
+[Vendor/README.md](../Vendor/README.md).
+
+---
+
+## Licences
+
+`Licenses/*.txt` are committed licence texts and attribution notices, copied
+into the archive as `LICENSES/`. They travel with the binaries so that any
+bundle built from this archive carries the attribution its licences require —
+in particular the LGPL notice for FFmpeg, which must point at the build
+configuration used to produce the shipped libraries.

@@ -1,0 +1,102 @@
+name: Build
+
+# Builds the Space Engineers Linux binary dependencies (FFmpeg, DXVK Native,
+# Steamworks.NET) and publishes them, together with the committed proprietary
+# vendor blobs and the third-party licence texts, as a single tar.gz release
+# asset. Pulsar for Linux and Magnetar both consume that archive.
+#
+#   * push to main        -> build, then publish a PUBLIC release tagged
+#                            v1.0.<run_number> and marked "latest".
+#   * push to a (non-draft)
+#     pull request        -> build, then publish a DRAFT release (not public,
+#                            not "latest", no git tag is created until/unless a
+#                            maintainer publishes it). Same asset otherwise.
+#   * draft pull requests -> skipped entirely (no build, no release).
+#
+# The native wrapper libraries are NOT built or published here; they come from
+# CometWorks/linux-native-wrappers and consumers fetch that release separately.
+#
+# Pinned to ubuntu-24.04 (not ubuntu-latest) so the glibc the libraries are
+# linked against does not silently move under consumers when GitHub rolls the
+# "latest" label forward. glibc is backwards compatible, so binaries built on
+# 24.04 (glibc 2.39) run on any newer distro but not on older ones.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Build on pushes to main and on non-draft PR pushes; never on draft PRs.
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          # build-essential/pkg-config/nasm  -> FFmpeg
+          # meson/ninja-build/glslang-tools/libvulkan-dev -> DXVK Native
+          # patchelf/binutils -> DT_RUNPATH patching + readelf verification
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config make curl tar git \
+            nasm patchelf binutils zlib1g-dev \
+            meson ninja-build glslang-tools libvulkan-dev
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          # Steamworks.NET's Standalone3.0 project targets net8.0.
+          dotnet-version: '8.0.x'
+
+      - name: Build dependencies and package the archive
+        run: |
+          set -euo pipefail
+          chmod +x build.sh Scripts/*.sh
+          ./build.sh
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-dependencies
+          path: dist/linux-dependencies.tar.gz
+          if-no-files-found: error
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          asset="dist/linux-dependencies.tar.gz"
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Push to main -> public, tagged, latest.
+            tag="v1.0.${{ github.run_number }}"
+            gh release create "$tag" \
+              --repo "${{ github.repository }}" \
+              --latest \
+              --target "${{ github.sha }}" \
+              --title "Linux Dependencies $tag" \
+              --notes "Automated build of the Space Engineers Linux binary dependencies from commit ${{ github.sha }}." \
+              "$asset"
+          else
+            # Non-draft PR -> draft release: not public, not latest, and no git
+            # tag is created until a maintainer publishes it. One draft is kept
+            # per PR (a stable pr-<n> tag), refreshed on every push.
+            tag="pr-${{ github.event.pull_request.number }}"
+            gh release delete "$tag" \
+              --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
+            gh release create "$tag" \
+              --repo "${{ github.repository }}" \
+              --draft \
+              --title "Linux Dependencies (PR #${{ github.event.pull_request.number }})" \
+              --notes "Draft build for PR #${{ github.event.pull_request.number }} (commit ${{ github.event.pull_request.head.sha }})." \
+              "$asset"
+          fi
