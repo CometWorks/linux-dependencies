@@ -49,6 +49,17 @@ to need editing regardless.
    `libvulkan-dev` on the runner and a newer Vulkan driver on users' machines;
    check upstream's release notes before bumping across a major version.
 
+## Bumping SDL3
+
+SDL3 is not shipped — it only supplies headers for the DXVK build. Set
+`SDL3_VERSION` in `Scripts/build_sdl3.sh` (the upstream tag is
+`release-$SDL3_VERSION`) and rebuild DXVK.
+
+A bump is usually only needed when a newer DXVK requires newer SDL3 headers.
+Because DXVK dlopens `libSDL3.so.0` at runtime rather than linking it, the
+version built here does not constrain what users need installed — but building
+against much newer headers than the SDL3 in the wild is still worth avoiding.
+
 ## Bumping Steamworks.NET
 
 1. Set `STEAMWORKS_NET_COMMIT` in `Scripts/build_steamworks_net.sh`.

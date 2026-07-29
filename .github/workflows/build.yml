@@ -44,9 +44,11 @@ jobs:
           sudo apt-get update
           # build-essential/pkg-config/nasm  -> FFmpeg
           # meson/ninja-build/glslang-tools/libvulkan-dev -> DXVK Native
+          # cmake -> the pinned SDL3 that DXVK compiles against (ubuntu-24.04
+          #          has no libsdl3-dev, so Scripts/build_sdl3.sh builds one)
           # patchelf/binutils -> DT_RUNPATH patching + readelf verification
           sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config make curl tar git \
+            build-essential pkg-config make cmake curl tar git \
             nasm patchelf binutils zlib1g-dev \
             meson ninja-build glslang-tools libvulkan-dev
 

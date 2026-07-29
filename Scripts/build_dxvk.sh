@@ -25,18 +25,25 @@
 #   ./build_dxvk.sh           Build (or no-op if cached).
 #   ./build_dxvk.sh --clean   Wipe build dirs and rebuild from scratch.
 #
+# SDL3 is required to build (see build_sdl3.sh, which this script invokes):
+# DXVK Native's window-system integration compiles against SDL3 headers and
+# dlopens libSDL3.so.0 at runtime. Ubuntu 24.04 has no libsdl3-dev package, so
+# a pinned SDL3 is built into build/sdl3-prefix/ and put on PKG_CONFIG_PATH
+# here. Nothing from SDL3 ends up in the release archive.
+#
 # Env-var overrides (defaults shown):
 #   DXVK_VERSION  = 2.7.1
 #   DXVK_REPO     = https://github.com/doitsujin/dxvk.git
 #   BUILD_DIR     = <repo>/build
 #   LIBRARIES_DIR = $BUILD_DIR/Libraries
+#   SDL3_PREFIX   = $BUILD_DIR/sdl3-prefix
 #   JOBS          = $(nproc)
 #
 # Requirements: git, meson (>=0.58), ninja, glslang (glslangValidator),
-# pkg-config, gcc, g++, patchelf.
+# pkg-config, gcc, g++, patchelf, cmake (for the SDL3 build).
 # Typical Debian/Ubuntu install:
 #   sudo apt install git meson ninja-build glslang-tools libvulkan-dev \
-#                    pkg-config build-essential patchelf
+#                    pkg-config build-essential patchelf cmake
 
 set -euo pipefail
 
@@ -49,6 +56,7 @@ BUILD_DIR_DEFAULT="$REPO_DIR/build"
 
 BUILD_DIR="${BUILD_DIR:-$BUILD_DIR_DEFAULT}"
 LIBRARIES_DIR="${LIBRARIES_DIR:-$BUILD_DIR/Libraries}"
+SDL3_PREFIX="${SDL3_PREFIX:-$BUILD_DIR/sdl3-prefix}"
 JOBS="${JOBS:-$(nproc)}"
 
 DXVK_SRC_DIR="$BUILD_DIR/dxvk"
@@ -68,7 +76,7 @@ done
 
 # ---- preflight --------------------------------------------------------------
 
-for tool in git meson ninja glslangValidator pkg-config gcc g++ patchelf; do
+for tool in git meson ninja glslangValidator pkg-config gcc g++ patchelf cmake; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: required tool not found in PATH: $tool" >&2
         exit 1
@@ -108,6 +116,22 @@ else
     git -C "$DXVK_SRC_DIR" -c advice.detachedHead=false checkout "v$DXVK_VERSION"
     git -C "$DXVK_SRC_DIR" submodule update --init --recursive --depth 1
 fi
+
+# ---- SDL3 (build-time only) -------------------------------------------------
+# DXVK's meson build errors out with "SDL3, SDL2, or GLFW are required to build
+# dxvk-native" unless one of them is discoverable. Build the pinned SDL3 and
+# put its pkgconfig dir first on PKG_CONFIG_PATH, so the same headers are used
+# whether or not the host happens to have an SDL3 installed.
+
+SDL3_ARGS=()
+if [ "$CLEAN" = "1" ]; then
+    SDL3_ARGS+=("--clean")
+fi
+
+echo "==> Ensuring SDL3 is available for the DXVK build"
+bash "$SCRIPT_DIR/build_sdl3.sh" "${SDL3_ARGS[@]+"${SDL3_ARGS[@]}"}"
+
+export PKG_CONFIG_PATH="$SDL3_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
 # ---- build via upstream package-native.sh ----------------------------------
 # package-native.sh refuses to run if its destdir/dxvk-native-<ver>/ already

@@ -13,6 +13,10 @@ pinned. To change any of these, see [maintenance.md](maintenance.md).
 | EOS SDK | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
 | Steamworks SDK | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
 
+`Scripts/build_sdl3.sh` builds SDL3 3.4.12 as well, but nothing from it is
+shipped — it exists only so DXVK has headers to compile against. See
+[SDL3 is a build-time dependency](#sdl3-is-a-build-time-dependency).
+
 ---
 
 ## FFmpeg 8.1
@@ -112,6 +116,25 @@ The output `.so` files are located with `find` rather than a hard-coded path,
 so an upstream rearrangement (`usr/lib64/`, a multiarch subdirectory) does not
 silently break staging. They then get the same `DT_RUNPATH=$ORIGIN` treatment
 as the FFmpeg libraries.
+
+### SDL3 is a build-time dependency
+
+DXVK's meson build refuses to configure without SDL3, SDL2 or GLFW, because
+its window-system integration needs one of them. Pulsar sets
+`DXVK_WSI_DRIVER=SDL3` and preloads `libSDL3.so` from the user's system, so it
+is specifically the SDL3 backend we need.
+
+SDL3 is a *headers-only* dependency here. DXVK takes it as
+`lib_sdl3.partial_dependency(compile_args: true, includes: true)` and dlopens
+`libSDL3.so.0` at runtime, so the produced `libdxvk_*.so` have no `NEEDED`
+entry for SDL3 and nothing SDL-related ships in the archive.
+
+Ubuntu 24.04 — the pinned CI runner — has no `libsdl3-dev` package, and a
+developer machine may have any SDL3 version or none. `Scripts/build_sdl3.sh`
+therefore builds a pinned SDL3 (**3.4.12**) into `build/sdl3-prefix/` and
+`build_dxvk.sh` puts that on `PKG_CONFIG_PATH`, so CI and local builds compile
+against identical headers. This was verified to be neutral: DXVK built against
+the pinned 3.4.12 is byte-identical to DXVK built against a system SDL3 3.5.0.
 
 **Caching:** `build/dxvk.stamp` records the built version. A rerun with the
 same `DXVK_VERSION` and all outputs present skips the build entirely.

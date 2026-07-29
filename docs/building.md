@@ -10,7 +10,7 @@ opening a pull request.
 On Debian / Ubuntu:
 
 ```bash
-sudo apt install build-essential pkg-config make curl tar git nasm patchelf binutils zlib1g-dev meson ninja-build glslang-tools libvulkan-dev
+sudo apt install build-essential pkg-config make cmake curl tar git nasm patchelf binutils zlib1g-dev meson ninja-build glslang-tools libvulkan-dev
 ```
 
 You also need the **.NET SDK** (8.0 or newer, with the `net8.0` targeting pack)
@@ -23,6 +23,7 @@ What each group is for:
 | --- | --- |
 | `build-essential`, `pkg-config`, `make`, `nasm`, `zlib1g-dev` | FFmpeg (`nasm` provides the x86 SIMD assembler; `yasm` also works) |
 | `meson`, `ninja-build`, `glslang-tools`, `libvulkan-dev` | DXVK Native |
+| `cmake` | the pinned SDL3 that DXVK compiles against |
 | `patchelf`, `binutils` | `DT_RUNPATH=$ORIGIN` patching and the `readelf` verification |
 | `curl`, `tar`, `git` | Fetching sources |
 | .NET SDK | Steamworks.NET |
@@ -97,7 +98,12 @@ rerun does no work:
 | --- | --- | --- |
 | FFmpeg | `build/ffmpeg-8.1.tar.xz` (download), `build/ffmpeg-8.1/` (source), `build/ffmpeg-8.1/_build/` (objects) | A changed `configure` flag set, tracked by a hash in `_build/.configure_flags`; otherwise an incremental `make` |
 | DXVK | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` |
+| SDL3 | `build/SDL/` (clone), `build/sdl3-prefix/`, `build/sdl3.stamp` | A changed `SDL3_VERSION` |
 | Steamworks.NET | `build/Steamworks.NET/` (clone), `build/steamworks-net.stamp` | A changed `STEAMWORKS_NET_COMMIT` |
+
+SDL3 is built only when DXVK actually rebuilds — it is a build-time-only
+dependency for DXVK's headers and is never shipped. See
+[dependencies.md](dependencies.md#sdl3-is-a-build-time-dependency).
 
 To force specific work:
 
