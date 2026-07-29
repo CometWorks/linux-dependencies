@@ -24,10 +24,17 @@ cache that its `build.sh` then copies the wanted files out of.
 2. **Check the cache.** `build/linux-dependencies.stamp` records the tag last
    staged. If it matches the resolved tag and every expected file is already
    present, the download is skipped.
-3. **Download and extract**, preserving symlinks — `tar -xz`, never a
+3. **Clear what the previous release staged.** `tar` only overlays, so without
+   this a release that renames a file — an FFmpeg SOVERSION bump, say — would
+   leave the old one behind and the consumer would ship both. Pulsar extracts
+   into a directory it shares with the native-wrapper fetch, so it records a
+   `build/linux-dependencies.manifest` of the paths each release owns and
+   removes only those. Magnetar extracts into a directory of its own and can
+   simply wipe it.
+4. **Download and extract**, preserving symlinks — `tar -xz`, never a
    dereferencing copy, or the `libavcodec.so` → `.so.62` → `.so.62.28.100`
    chain that FFmpeg's SONAME resolution needs would be flattened.
-4. **Verify** that the files that consumer needs actually arrived.
+5. **Verify** that the files that consumer needs actually arrived.
 
 If the GitHub API is unreachable but a cached copy is already staged, the
 cached copy is reused rather than failing the build — the same

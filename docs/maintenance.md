@@ -101,7 +101,11 @@ The archive layout is a contract with the consumers — see
    opportunity to review it. Consumers that pin `LINUX_DEPENDENCIES_TAG` are
    insulated; ones that track latest are not.
 
-Adding a file is safe. Removing or renaming one is not.
+Adding a file is safe. Renaming or removing one no longer strands the old copy
+in a consumer's staging tree — both consumers clear the previous release's
+files before extracting, see [consuming.md](consuming.md#what-the-fetch-script-does)
+— but it still breaks any consumer whose expected-file list names it, so treat
+it as a breaking change.
 
 ## Changing the CI runner image
 
