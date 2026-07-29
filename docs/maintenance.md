@@ -60,6 +60,22 @@ Because DXVK dlopens `libSDL3.so.0` at runtime rather than linking it, the
 version built here does not constrain what users need installed — but building
 against much newer headers than the SDL3 in the wild is still worth avoiding.
 
+## Bumping OpenAL Soft
+
+1. Set `OPENAL_VERSION` **and** `OPENAL_SHA256` in `Scripts/build_openal.sh`.
+   The tarball URL is mutable, so the checksum is the pin — a version bump
+   without a matching checksum fails the download verification, by design.
+2. Build. If upstream bumps the SONAME past `libopenal.so.1`, the script fails
+   with an explicit message; update `EXPECTED_SONAME` there, `EXPECTED_FILES`
+   in `build.sh`, the file list in `release-archive.md`, and Pulsar's
+   expected-file lists and `/app/lib` symlink together. Silk.NET dlopens by
+   SONAME, so a mismatch means the bundled library is silently unused.
+3. Check the `ldd` allow-list still passes. A new backend that links rather
+   than dlopens would show up there.
+4. Update the version in `Licenses/OpenAL-Soft-README.txt`, and re-copy
+   `COPYING`, `BSD-3Clause` and `LICENSE-pffft` from the new tarball if
+   upstream changed them.
+
 ## Bumping Steamworks.NET
 
 1. Set `STEAMWORKS_NET_COMMIT` in `Scripts/build_steamworks_net.sh`.
@@ -101,7 +117,11 @@ The archive layout is a contract with the consumers — see
    opportunity to review it. Consumers that pin `LINUX_DEPENDENCIES_TAG` are
    insulated; ones that track latest are not.
 
-Adding a file is safe. Removing or renaming one is not.
+Adding a file is safe. Renaming or removing one no longer strands the old copy
+in a consumer's staging tree — both consumers clear the previous release's
+files before extracting, see [consuming.md](consuming.md#what-the-fetch-script-does)
+— but it still breaks any consumer whose expected-file list names it, so treat
+it as a breaking change.
 
 ## Changing the CI runner image
 

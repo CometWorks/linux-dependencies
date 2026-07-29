@@ -24,10 +24,17 @@ cache that its `build.sh` then copies the wanted files out of.
 2. **Check the cache.** `build/linux-dependencies.stamp` records the tag last
    staged. If it matches the resolved tag and every expected file is already
    present, the download is skipped.
-3. **Download and extract**, preserving symlinks — `tar -xz`, never a
+3. **Clear what the previous release staged.** `tar` only overlays, so without
+   this a release that renames a file — an FFmpeg SOVERSION bump, say — would
+   leave the old one behind and the consumer would ship both. Pulsar extracts
+   into a directory it shares with the native-wrapper fetch, so it records a
+   `build/linux-dependencies.manifest` of the paths each release owns and
+   removes only those. Magnetar extracts into a directory of its own and can
+   simply wipe it.
+4. **Download and extract**, preserving symlinks — `tar -xz`, never a
    dereferencing copy, or the `libavcodec.so` → `.so.62` → `.so.62.28.100`
    chain that FFmpeg's SONAME resolution needs would be flattened.
-4. **Verify** that the files that consumer needs actually arrived.
+5. **Verify** that the files that consumer needs actually arrived.
 
 If the GitHub API is unreachable but a cached copy is already staged, the
 cached copy is reused rather than failing the build — the same
@@ -52,7 +59,7 @@ LINUX_DEPENDENCIES_TAG=v1.0.7 ./build.sh
 `Scripts/build_dependencies.sh` orchestrates two fetches and nothing else:
 
 ```
-Scripts/fetch_linux_dependencies.sh   -> FFmpeg, DXVK, Steamworks.NET,
+Scripts/fetch_linux_dependencies.sh   -> FFmpeg, DXVK, OpenAL, Steamworks.NET,
                                          EOS + Steam blobs, LICENSES/
 Scripts/fetch_native_wrappers.sh      -> libD3DCompiler.so, libHavok.so,
                                          libRecastDetour.so, libVRageNative.so
@@ -73,9 +80,17 @@ compiling FFmpeg and DXVK.
 ## Magnetar
 
 Magnetar is headless, so it takes `Steamworks.NET.dll` and the two proprietary
-runtimes but not FFmpeg or DXVK — those are simply left unused in
-`build/linux-deps/`. Its `build.sh` fetches both releases and then stages the
-files it wants into `build/Libraries/`, licence texts included.
+runtimes but not FFmpeg, DXVK or OpenAL — those stay unused in
+`build/linux-deps/` and never reach the bundle. Its `build.sh` fetches both
+releases and then stages only the files it wants into `build/Libraries/`.
+
+That applies to the licence texts too. Copying `LICENSES/` wholesale would put
+FFmpeg, DXVK and OpenAL attribution into a bundle containing none of those
+libraries, and the archive's own `LICENSES/README.txt` index would list files
+that are not there. Magnetar therefore stages just the three notices covering
+what it ships — `Steamworks.NET-LICENSE.txt`, `Steam-NOTICE.txt` and
+`EOS-NOTICE.txt` — removes any notice a previous build left behind, and writes
+its own `README.txt` describing that subset.
 
 This replaced a genuinely manual step. The proprietary Steamworks and EOS
 runtimes were never committed to Magnetar; a contributor had to obtain them

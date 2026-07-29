@@ -10,7 +10,7 @@ opening a pull request.
 On Debian / Ubuntu:
 
 ```bash
-sudo apt install build-essential pkg-config make cmake curl tar git nasm patchelf binutils zlib1g-dev meson ninja-build glslang-tools libvulkan-dev
+sudo apt install build-essential pkg-config make cmake curl tar git nasm patchelf binutils zlib1g-dev meson ninja-build glslang-tools libvulkan-dev libpulse-dev libasound2-dev libpipewire-0.3-dev
 ```
 
 You also need the **.NET SDK** (8.0 or newer, with the `net8.0` targeting pack)
@@ -23,7 +23,8 @@ What each group is for:
 | --- | --- |
 | `build-essential`, `pkg-config`, `make`, `nasm`, `zlib1g-dev` | FFmpeg (`nasm` provides the x86 SIMD assembler; `yasm` also works) |
 | `meson`, `ninja-build`, `glslang-tools`, `libvulkan-dev` | DXVK Native |
-| `cmake` | the pinned SDL3 that DXVK compiles against |
+| `cmake` | the pinned SDL3 that DXVK compiles against, and OpenAL Soft |
+| `libpulse-dev`, `libasound2-dev`, `libpipewire-0.3-dev` | OpenAL's audio backends — see below |
 | `patchelf`, `binutils` | `DT_RUNPATH=$ORIGIN` patching and the `readelf` verification |
 | `curl`, `tar`, `git` | Fetching sources |
 | .NET SDK | Steamworks.NET |
@@ -51,7 +52,7 @@ Subsequent runs are near-instant when nothing changed — see
 | --- | --- |
 | `--clean` | Passes `--clean` to every sub-build: wipes cached source and build trees and rebuilds from scratch |
 | `--no-package` | Stages `build/Libraries/` but skips the tarball |
-| `--only=ffmpeg,dxvk` | Runs only the listed sub-builds. Valid names: `ffmpeg`, `dxvk`, `steamworks-net` |
+| `--only=ffmpeg,dxvk` | Runs only the listed sub-builds. Valid names: `ffmpeg`, `dxvk`, `openal`, `steamworks-net`. An unknown name is rejected rather than silently skipping everything |
 | `--skip=dxvk` | Runs every sub-build except the listed ones |
 | `-h`, `--help` | Prints the header comment |
 
@@ -99,6 +100,7 @@ rerun does no work:
 | FFmpeg | `build/ffmpeg-8.1.tar.xz` (download), `build/ffmpeg-8.1/` (source), `build/ffmpeg-8.1/_build/` (objects) | A changed `configure` flag set, tracked by a hash in `_build/.configure_flags`; otherwise an incremental `make` |
 | DXVK | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` |
 | SDL3 | `build/SDL/` (clone), `build/sdl3-prefix/`, `build/sdl3.stamp` | A changed `SDL3_VERSION` |
+| OpenAL | `build/openal-soft-1.25.2.tar.bz2`, `build/openal-soft-1.25.2/`, `build/openal.stamp` | A changed `OPENAL_VERSION` |
 | Steamworks.NET | `build/Steamworks.NET/` (clone), `build/steamworks-net.stamp` | A changed `STEAMWORKS_NET_COMMIT` |
 
 SDL3 is built only when DXVK actually rebuilds — it is a build-time-only
@@ -136,6 +138,11 @@ above says which dependency needs it.
 moved, which means the pinned version changed or upstream bumped it. See
 [maintenance.md](maintenance.md); the `EXPECTED_SOVER` table and Pulsar's
 `LibraryVersionMap` have to move together.
+
+**OpenAL: `Required backend not found`** — a backend's development headers are
+missing. Install `libpulse-dev`, `libasound2-dev` and `libpipewire-0.3-dev`.
+This failure is deliberate: without it the build would quietly produce an
+OpenAL with no audio backends.
 
 **`<name>: unexpected dep <lib>`** — an FFmpeg configure flag stopped
 suppressing something and the library now depends on a host package. Do not
