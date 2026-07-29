@@ -46,11 +46,19 @@ jobs:
           # meson/ninja-build/glslang-tools/libvulkan-dev -> DXVK Native
           # cmake -> the pinned SDL3 that DXVK compiles against (ubuntu-24.04
           #          has no libsdl3-dev, so Scripts/build_sdl3.sh builds one)
+          #          and OpenAL Soft
+          # libpulse-dev/libasound2-dev/libpipewire-0.3-dev -> OpenAL compiles
+          #          a backend in only when its headers are present at build
+          #          time, then dlopens the library at runtime. Without these
+          #          the build would silently produce an OpenAL with no audio
+          #          backends; build_openal.sh passes ALSOFT_REQUIRE_* so a
+          #          missing one fails the configure instead.
           # patchelf/binutils -> DT_RUNPATH patching + readelf verification
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config make cmake curl tar git \
             nasm patchelf binutils zlib1g-dev \
-            meson ninja-build glslang-tools libvulkan-dev
+            meson ninja-build glslang-tools libvulkan-dev \
+            libpulse-dev libasound2-dev libpipewire-0.3-dev
 
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v5

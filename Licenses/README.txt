@@ -11,6 +11,10 @@ Files in this directory:
     FFmpeg-LGPL-2.1.txt        LGPL-2.1 text covering libav*.so* / libsw*.so*
     FFmpeg-README.txt          Build provenance + LGPL relinking notes
     DXVK-LICENSE.txt           zlib licence covering libdxvk_*.so*
+    OpenAL-Soft-LGPL-2.0.txt   LGPL-2.0 text covering libopenal.so*
+    OpenAL-Soft-README.txt     Build provenance + LGPL relinking notes
+    OpenAL-Soft-NOTICES.txt    BSD-3-Clause and PFFFT notices for the
+                               portions of OpenAL Soft under those terms
     EOS-NOTICE.txt             Attribution for libEOSSDK-Linux-Shipping.so
                                (proprietary, Epic Games)
     Steam-NOTICE.txt           Attribution for libsteam_api.so

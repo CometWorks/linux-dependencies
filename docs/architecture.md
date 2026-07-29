@@ -32,6 +32,7 @@ for the PE-loader shims.
 | --- | --- |
 | `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | FFmpeg 8.1, built from the upstream release tarball |
 | `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | DXVK Native 2.7.1, built from the upstream git tag |
+| `libopenal.so` | OpenAL Soft 1.25.2, built from the upstream release tarball |
 | `Steamworks.NET.dll` | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | Proprietary Epic blob, committed under `Vendor/` |
 | `libsteam_api.so` | Proprietary Valve blob, committed under `Vendor/` |
@@ -83,8 +84,9 @@ into `build/Libraries/` is the entire staging step.
 
 ### Everything is pinned
 
-FFmpeg is pinned to a version, DXVK to a git tag, Steamworks.NET to a commit
-SHA. No dependency resolves to "latest" at build time. A rebuild of an
+FFmpeg and OpenAL are pinned to a version (OpenAL additionally by tarball
+checksum, since its URL is mutable), DXVK to a git tag, Steamworks.NET to a
+commit SHA. No dependency resolves to "latest" at build time. A rebuild of an
 unchanged tree produces functionally identical binaries, and a version bump is
 always a visible commit.
 

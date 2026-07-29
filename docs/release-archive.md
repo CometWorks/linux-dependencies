@@ -12,7 +12,7 @@ Each release carries a single asset:
 linux-dependencies.tar.gz
 ```
 
-Roughly 23 MB, gzip-compressed tar, built by `build.sh`.
+Roughly 24 MB, gzip-compressed tar, built by `build.sh`.
 
 Download the latest with:
 
@@ -55,6 +55,9 @@ LICENSES/DXVK-LICENSE.txt
 LICENSES/EOS-NOTICE.txt
 LICENSES/FFmpeg-LGPL-2.1.txt
 LICENSES/FFmpeg-README.txt
+LICENSES/OpenAL-Soft-LGPL-2.0.txt
+LICENSES/OpenAL-Soft-NOTICES.txt
+LICENSES/OpenAL-Soft-README.txt
 LICENSES/README.txt
 LICENSES/Steam-NOTICE.txt
 LICENSES/Steamworks.NET-LICENSE.txt
@@ -89,10 +92,11 @@ archive avoids a client/server split that would have to be maintained forever.
 | --- | :---: | :---: |
 | FFmpeg libraries | yes | no |
 | DXVK libraries | yes | no |
+| OpenAL library | yes | no |
 | `Steamworks.NET.dll` | yes | yes |
 | `libsteam_api.so` | yes | yes |
 | `libEOSSDK-Linux-Shipping.so` | yes | yes |
-| `LICENSES/` | yes | yes |
+| `LICENSES/` | yes | the subset covering what it ships |
 
 ## Versioning and tags
 

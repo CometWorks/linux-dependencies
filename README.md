@@ -13,6 +13,7 @@ published release archive instead of building these libraries themselves.
 | --- | --- | --- |
 | FFmpeg (`libavcodec`, `libavformat`, `libavutil`, `libswresample`, `libswscale`) | 8.1 | LGPL-2.1-or-later |
 | DXVK Native (`libdxvk_d3d11.so`, `libdxvk_dxgi.so`) | 2.7.1 | zlib |
+| OpenAL Soft (`libopenal.so`) | 1.25.2 | LGPL-2.0-or-later |
 | `Steamworks.NET.dll` | pinned commit | MIT |
 | `libEOSSDK-Linux-Shipping.so` | vendor blob | proprietary (Epic) |
 | `libsteam_api.so` | vendor blob | proprietary (Valve) |

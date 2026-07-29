@@ -9,6 +9,7 @@ pinned. To change any of these, see [maintenance.md](maintenance.md).
 | --- | --- | --- | --- |
 | FFmpeg | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
 | DXVK Native | tag `v2.7.1` | zlib | `Scripts/build_dxvk.sh` |
+| OpenAL Soft | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
 | Steamworks.NET | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
 | Steamworks SDK | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
@@ -148,6 +149,59 @@ SDL3 3.5.0.
 
 **Caching:** `build/dxvk.stamp` records the built version. A rerun with the
 same `DXVK_VERSION` and all outputs present skips the build entirely.
+
+---
+
+## OpenAL Soft 1.25.2
+
+**Produces:** `libopenal.so.1`, with an unversioned `libopenal.so` alias.
+
+**Source:** `https://openal-soft.org/openal-releases/openal-soft-1.25.2.tar.bz2`,
+downloaded and cached under `build/`. A tarball URL is mutable, so unlike the
+git-tag clones elsewhere the pin here is a SHA-256 checksum, verified on every
+run.
+
+**Consumed by:** Pulsar only. Space Engineers' Linux audio goes through
+Silk.NET.OpenAL (used by se-linux-compat), which dlopens `libopenal.so.1` at
+runtime. Magnetar is headless and does not stage it.
+
+**Why it lives here.** It used to be handled three different ways depending on
+the bundle: compiled from source inside Pulsar's Flatpak manifest, and left to
+LinuxCompat's `Assets/` or the host for the developer 7z. It was the last
+native dependency outside the shared pipeline. Building it here gives both
+bundles the same pinned binary and removes a from-source compile from every
+Flatpak build.
+
+### Backends are pinned deliberately
+
+OpenAL compiles a backend in only when its development headers are present at
+build time, then dlopens the actual library at runtime. Left to autodetection,
+a build host without `libpulse-dev` would silently produce a `libopenal` with
+no PulseAudio backend — a library that loads fine and then plays no sound.
+
+The build therefore passes `ALSOFT_REQUIRE_PIPEWIRE`, `ALSOFT_REQUIRE_PULSEAUDIO`
+and `ALSOFT_REQUIRE_ALSA`, turning a missing header into a configure-time
+failure. OSS is enabled too (it needs no library). JACK, PortAudio, SndIO and
+the SDL backends are explicitly disabled — each would add a dev package to the
+runner, and upstream keeps the SDL backend off by default because it adds a
+runtime dependency.
+
+`CMAKE_DISABLE_FIND_PACKAGE_SDL3` stops the unconditional `find_package(SDL3)`
+at the top of upstream's `CMakeLists.txt` from tripping over whatever SDL3 the
+build host happens to have — a broken or partial system install otherwise
+fails the configure even though the backend is off.
+
+Because the backends are dlopened rather than linked, the shipped library's
+only `NEEDED` entries are glibc, `libstdc++` and `libgcc_s`. The `ldd`
+allow-list enforces that: a `NEEDED` entry for `libpulse` would mean the bundle
+hard-requires that specific audio stack.
+
+### Post-build verification
+
+The **SONAME is asserted** to be `libopenal.so.1`. Silk.NET dlopens by SONAME,
+so a bump would leave the bundled copy unused while the application silently
+fell back to the host's — or found none at all. `DT_RUNPATH=$ORIGIN` is patched
+on and re-checked, as for FFmpeg and DXVK.
 
 ---
 

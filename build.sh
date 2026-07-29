@@ -11,12 +11,13 @@
 #   1. Scripts/build_ffmpeg.sh          FFmpeg 8.1 (libav*.so* / libsw*.so*)
 #   2. Scripts/build_dxvk.sh            DXVK Native v2.7.1
 #                                       (libdxvk_d3d11.so + libdxvk_dxgi.so + .0 links)
-#   3. Scripts/build_steamworks_net.sh  Steamworks.NET.dll
-#   4. Vendor copy:                     libEOSSDK-Linux-Shipping.so + libsteam_api.so
+#   3. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so*)
+#   4. Scripts/build_steamworks_net.sh  Steamworks.NET.dll
+#   5. Vendor copy:                     libEOSSDK-Linux-Shipping.so + libsteam_api.so
 #                                       (proprietary, committed under Vendor/)
-#   5. License copy:                    Licenses/*.txt -> LICENSES/ subdir
-#   6. Final assertion:                 every expected artefact is present
-#   7. Package:                         dist/linux-dependencies.tar.gz
+#   6. License copy:                    Licenses/*.txt -> LICENSES/ subdir
+#   7. Final assertion:                 every expected artefact is present
+#   8. Package:                         dist/linux-dependencies.tar.gz
 #
 # The native wrapper libraries (libD3DCompiler.so, libHavok.so,
 # libRecastDetour.so, libVRageNative.so) are deliberately NOT part of this
@@ -77,7 +78,7 @@ for arg in "$@"; do
         --no-package) DO_PACKAGE=0 ;;
         --only=*)     ONLY="${arg#--only=}" ;;
         --skip=*)     SKIP="${arg#--skip=}" ;;
-        -h|--help)    sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
@@ -90,7 +91,7 @@ fi
 # Reject unknown step names. Without this a typo (--only=steamworks_net with an
 # underscore) matches nothing, silently skips every build, and reports only
 # that staging is incomplete.
-STEP_NAMES="ffmpeg dxvk steamworks-net"
+STEP_NAMES="ffmpeg dxvk openal steamworks-net"
 for spec in "$ONLY" "$SKIP"; do
     [ -n "$spec" ] || continue
     IFS=',' read -ra names <<< "$spec"
@@ -143,7 +144,7 @@ echo "==> Build dir   : $BUILD_DIR"
 echo "==> Staging dir : $LIBRARIES_DIR"
 echo "==> Output dir  : $OUTPUT_DIR"
 
-# ---- 1..3. per-dependency build scripts ------------------------------------
+# ---- 1..4. per-dependency build scripts ------------------------------------
 
 run_step() {
     local name="$1"; shift
@@ -162,9 +163,10 @@ run_step() {
 
 run_step ffmpeg         "$SCRIPTS_DIR/build_ffmpeg.sh"
 run_step dxvk           "$SCRIPTS_DIR/build_dxvk.sh"
+run_step openal         "$SCRIPTS_DIR/build_openal.sh"
 run_step steamworks-net "$SCRIPTS_DIR/build_steamworks_net.sh"
 
-# ---- 4. Vendor blobs --------------------------------------------------------
+# ---- 5. Vendor blobs --------------------------------------------------------
 
 echo
 echo "############################################################"
@@ -181,7 +183,7 @@ for blob in libEOSSDK-Linux-Shipping.so libsteam_api.so; do
     echo "  copied $blob"
 done
 
-# ---- 5. Licenses ------------------------------------------------------------
+# ---- 6. Licenses ------------------------------------------------------------
 
 echo
 echo "############################################################"
@@ -194,7 +196,7 @@ for f in "$LICENSES_SRC"/*.txt; do
 done
 shopt -u nullglob
 
-# ---- 6. final assertion ----------------------------------------------------
+# ---- 7. final assertion ----------------------------------------------------
 # Confirm every artefact every consumer expects is present. Missing files here
 # are far easier to debug than a cryptic failure inside a consumer's build.
 #
@@ -211,6 +213,8 @@ EXPECTED_FILES=(
     # DXVK
     libdxvk_d3d11.so libdxvk_d3d11.so.0
     libdxvk_dxgi.so  libdxvk_dxgi.so.0
+    # OpenAL
+    libopenal.so libopenal.so.1
     # Vendor
     libEOSSDK-Linux-Shipping.so libsteam_api.so
     # Managed
@@ -220,6 +224,9 @@ EXPECTED_FILES=(
     LICENSES/EOS-NOTICE.txt
     LICENSES/FFmpeg-LGPL-2.1.txt
     LICENSES/FFmpeg-README.txt
+    LICENSES/OpenAL-Soft-LGPL-2.0.txt
+    LICENSES/OpenAL-Soft-NOTICES.txt
+    LICENSES/OpenAL-Soft-README.txt
     LICENSES/README.txt
     LICENSES/Steam-NOTICE.txt
     LICENSES/Steamworks.NET-LICENSE.txt
@@ -245,7 +252,7 @@ echo
 echo "==> All expected artefacts present in $LIBRARIES_DIR"
 ( cd "$LIBRARIES_DIR" && ls -lh | sed 's/^/  /' )
 
-# ---- 7. package -------------------------------------------------------------
+# ---- 8. package -------------------------------------------------------------
 # The archive mirrors build/Libraries/ exactly: every library at the archive
 # root plus a LICENSES/ subdir. Consumers extract it straight into their own
 # Libraries staging folder, so any layout change here is a breaking change
