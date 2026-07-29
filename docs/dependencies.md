@@ -133,8 +133,18 @@ Ubuntu 24.04 — the pinned CI runner — has no `libsdl3-dev` package, and a
 developer machine may have any SDL3 version or none. `Scripts/build_sdl3.sh`
 therefore builds a pinned SDL3 (**3.4.12**) into `build/sdl3-prefix/` and
 `build_dxvk.sh` puts that on `PKG_CONFIG_PATH`, so CI and local builds compile
-against identical headers. This was verified to be neutral: DXVK built against
-the pinned 3.4.12 is byte-identical to DXVK built against a system SDL3 3.5.0.
+against identical headers.
+
+That SDL3 is configured with `SDL_UNIX_CONSOLE_BUILD=ON`, which skips SDL's
+"could not find X11 or Wayland development libraries" hard error. The check
+guards against accidentally building an SDL that cannot open a window — which
+does not matter here, since nothing links or loads this SDL and the public
+headers are the same either way. It saves installing the entire X11 and
+Wayland dev stack on the runner to build a library that is then discarded.
+
+Both choices were verified to be neutral: DXVK built against the pinned,
+console-only 3.4.12 is byte-identical to DXVK built against a full system
+SDL3 3.5.0.
 
 **Caching:** `build/dxvk.stamp` records the built version. A rerun with the
 same `DXVK_VERSION` and all outputs present skips the build entirely.

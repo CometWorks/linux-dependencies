@@ -106,9 +106,17 @@ else
 fi
 
 # ---- configure + build + install -------------------------------------------
-# Only the shared library, headers and pkg-config file are wanted. Tests and
+# Only the headers and the pkg-config file are actually wanted. Tests and
 # examples are off because nothing here runs them and they roughly double the
 # build time.
+#
+# SDL_UNIX_CONSOLE_BUILD=ON suppresses SDL's "could not find X11 or Wayland
+# development libraries" hard error. That check exists to stop someone
+# accidentally building an SDL that cannot open a window, which is exactly the
+# situation we do not care about: DXVK compiles against the headers and never
+# links or loads this SDL, and the public headers are identical either way. The
+# alternative would be installing the whole X11 + Wayland dev stack on the CI
+# runner to build a library we then throw away.
 
 echo "==> Configuring SDL3 $SDL3_VERSION -> $SDL3_PREFIX"
 cmake -S "$SDL3_SRC_DIR" -B "$SDL3_BUILD_DIR" \
@@ -119,7 +127,8 @@ cmake -S "$SDL3_SRC_DIR" -B "$SDL3_BUILD_DIR" \
     -DSDL_STATIC=OFF \
     -DSDL_TESTS=OFF \
     -DSDL_EXAMPLES=OFF \
-    -DSDL_INSTALL_TESTS=OFF
+    -DSDL_INSTALL_TESTS=OFF \
+    -DSDL_UNIX_CONSOLE_BUILD=ON
 
 echo "==> Building SDL3 with -j$JOBS"
 cmake --build "$SDL3_BUILD_DIR" -j "$JOBS"
