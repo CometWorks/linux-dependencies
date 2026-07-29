@@ -5,10 +5,15 @@ and [Magnetar](https://github.com/CometWorks/magnetar) fetch the release
 archive at build time instead of building these dependencies themselves.
 
 Each consumer has a `Scripts/fetch_linux_dependencies.sh` that resolves a
-release, downloads `linux-dependencies.tar.gz`, and extracts it into that
-repo's `build/Libraries/` staging folder. The two copies are deliberately
-near-identical, and they mirror the existing `fetch_native_wrappers.sh` in both
-repos so there is one fetch pattern to understand rather than two.
+release and downloads `linux-dependencies.tar.gz`. The two copies are
+deliberately near-identical, and they mirror the existing
+`fetch_native_wrappers.sh` in both repos so there is one fetch pattern to
+understand rather than two.
+
+They differ in where they extract, because the consumers stage differently:
+Pulsar uses the whole archive and extracts straight into `build/Libraries/`,
+while Magnetar needs only part of it and extracts into a `build/linux-deps/`
+cache that its `build.sh` then copies the wanted files out of.
 
 ## What the fetch script does
 
@@ -17,9 +22,11 @@ repos so there is one fetch pattern to understand rather than two.
    `GH_TOKEN` / `GITHUB_TOKEN`, if present, is used only to lift the anonymous
    API rate limit.
 2. **Check the cache.** `build/linux-dependencies.stamp` records the tag last
-   staged. If it matches the resolved tag and every expected file is present in
-   `build/Libraries/`, the download is skipped.
-3. **Download and extract** into `build/Libraries/`, preserving symlinks.
+   staged. If it matches the resolved tag and every expected file is already
+   present, the download is skipped.
+3. **Download and extract**, preserving symlinks — `tar -xz`, never a
+   dereferencing copy, or the `libavcodec.so` → `.so.62` → `.so.62.28.100`
+   chain that FFmpeg's SONAME resolution needs would be flattened.
 4. **Verify** that the files that consumer needs actually arrived.
 
 If the GitHub API is unreachable but a cached copy is already staged, the
@@ -51,24 +58,43 @@ Scripts/fetch_native_wrappers.sh      -> libD3DCompiler.so, libHavok.so,
                                          libRecastDetour.so, libVRageNative.so
 ```
 
-Both land in `build/Libraries/`, and the script's final assertion — the full
-expected-file list, unchanged from before this split — confirms the combined
-result. `Legacy/Legacy.csproj` copies that folder next to the apphost in its
-`AfterBuild` and `AfterPublish` targets, and `Shared/Shared.csproj` references
-`build/Libraries/Steamworks.NET.dll`; neither needed any change, because
-`build/Libraries/` still ends up with exactly the same contents.
+Both land directly in `build/Libraries/`, and the script's final assertion —
+the full expected-file list, unchanged from before this split — confirms the
+combined result. `Legacy/Legacy.csproj` copies that folder next to the apphost
+in its `AfterBuild` and `AfterPublish` targets, and `Shared/Shared.csproj`
+references `build/Libraries/Steamworks.NET.dll`; neither needed any change,
+because `build/Libraries/` still ends up with exactly the same contents.
+
+Pulsar's own `Scripts/build_ffmpeg.sh`, `build_dxvk.sh` and
+`build_steamworks_net.sh` are gone, along with its `Vendor/` directory and
+`Scripts/Licenses/`. A clean build no longer spends roughly fifteen minutes
+compiling FFmpeg and DXVK.
 
 ## Magnetar
 
-Magnetar is headless, so it uses the managed assembly and the two proprietary
-blobs but not FFmpeg or DXVK. Its `build.sh` extracts the archive and stages
-the subset it needs, then fetches the native wrappers as before.
+Magnetar is headless, so it takes `Steamworks.NET.dll` and the two proprietary
+runtimes but not FFmpeg or DXVK — those are simply left unused in
+`build/linux-deps/`. Its `build.sh` fetches both releases and then stages the
+files it wants into `build/Libraries/`, licence texts included.
 
-Magnetar keeps its per-library environment overrides (`LIBSTEAM_API_SO`,
-`LIBEOSSDK_SO`, `LIBHAVOK_SO`, `LIBRECASTDETOUR_SO`, `LIBVRAGENATIVE_SO`) and
-its `$DS64` probe. Those take precedence over the fetched archive, so a
-developer can still point the build at a locally supplied `libsteam_api.so`
-without touching the release.
+This replaced a genuinely manual step. The proprietary Steamworks and EOS
+runtimes were never committed to Magnetar; a contributor had to obtain them
+from the vendor portals and drop them in `Vendor/`, and CI pulled them from a
+`Vendor.7z` behind a `VENDOR_ARCHIVE_URL` repository secret. A clean clone now
+builds with no manual file shuffling, and the release workflow needs no
+secrets at all.
+
+Every library is probed in the same order, most specific first:
+
+1. its own environment override (`STEAMWORKS_NET_DLL`, `LIBSTEAM_API_SO`,
+   `LIBEOSSDK_SO`, `LIBHAVOK_SO`, `LIBRECASTDETOUR_SO`, `LIBVRAGENATIVE_SO`)
+2. `<repo>/Vendor/<name>` — not committed any more, but the probe stays so a
+   developer can override without setting env vars
+3. the fetched release cache
+4. for `libsteam_api.so` only, the `$DS64` dedicated-server folder
+
+So a locally supplied `.so` still wins over the release, and `build.sh` prints
+exactly which path each file came from.
 
 ## Adding a new consumer
 
