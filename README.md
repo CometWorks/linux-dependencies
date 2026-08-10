@@ -1,13 +1,16 @@
 # Linux Dependencies
 
 Build and release of the Linux library dependencies of the Space Engineers
-client and server (version 1).
+client and server (version 1), plus a companion archive for the Space
+Engineers 2 client.
 
 Used by the Linux builds of [Pulsar](https://github.com/CometWorks/Pulsar) and
 [Magnetar](https://github.com/CometWorks/magnetar), which download the
 published release archive instead of building these libraries themselves.
 
 ## What it ships
+
+### `linux-dependencies.tar.gz` — Space Engineers 1
 
 | Artefact | Version | Licence |
 | --- | --- | --- |
@@ -18,8 +21,20 @@ published release archive instead of building these libraries themselves.
 | `libEOSSDK-Linux-Shipping.so` | vendor blob | proprietary (Epic) |
 | `libsteam_api.so` | vendor blob | proprietary (Valve) |
 
-All of it, plus the third-party licence texts, is published as a single
-`linux-dependencies.tar.gz` asset on every release.
+### `linux-dependencies-se2.tar.gz` — Space Engineers 2
+
+| Artefact | Version | Licence |
+| --- | --- | --- |
+| DXVK Native with the [Patches/dxvk/](Patches/dxvk/) series applied | 2.7.1 | zlib |
+| FMOD Engine (`libfmod.so`, `libfmodstudio.so`) | 2.03.11, matching the game | proprietary (Firelight) |
+
+The SE1 DXVK build stays pristine upstream; only the SE2 archive carries the
+patched variant. The SE2 archive is published once the FMOD runtime blobs are
+committed under [Vendor/se2/](Vendor/se2/) — until then `build.sh` skips it
+with a warning.
+
+Everything, plus the third-party licence texts, is published as release
+assets on every release.
 
 The PE-loader wrapper libraries (`libD3DCompiler.so`, `libHavok.so`,
 `libRecastDetour.so`, `libVRageNative.so`) are **not** part of this repo — they
@@ -43,9 +58,9 @@ this into their builds.
 ./build.sh
 ```
 
-Builds everything from source, stages `build/Libraries/`, and packages
-`dist/linux-dependencies.tar.gz`. See [docs/building.md](docs/building.md) for
-prerequisites and options.
+Builds everything from source, stages `build/Libraries/` (SE1) and
+`build/Libraries-SE2/` (SE2), and packages the archives under `dist/`. See
+[docs/building.md](docs/building.md) for prerequisites and options.
 
 ## Documentation
 

@@ -3,10 +3,21 @@
 #
 # Builds DXVK Native (the ELF/Linux variant of DXVK) from upstream sources
 # at https://github.com/doitsujin/dxvk, then installs the two .so files
-# the Space Engineers client needs into the build/Libraries staging folder:
+# the Space Engineers client needs into the staging folder:
 #
 #   libdxvk_d3d11.so   (SONAME libdxvk_d3d11.so.0; we ship both via a symlink)
 #   libdxvk_dxgi.so    (SONAME libdxvk_dxgi.so.0;  same)
+#
+# Two variants are built from the same pinned tag:
+#
+#   SE1 (default)   Pristine upstream sources, staged into build/Libraries/.
+#                   Shipped in linux-dependencies.tar.gz for Space Engineers 1
+#                   (Pulsar for Linux).
+#   SE2 (--se2)     Upstream sources with the patch series under Patches/dxvk/
+#                   applied first, staged into build/Libraries-SE2/. Shipped in
+#                   linux-dependencies-se2.tar.gz for the Space Engineers 2
+#                   client, which needs source-level DXVK fixes instead of
+#                   managed (Harmony) workarounds.
 #
 # DXVK Native is built by running upstream's package-native.sh helper at the
 # pinned tag; we pass --64-only --no-package so the 32-bit build is skipped
@@ -16,28 +27,38 @@
 # Source layout (under the gitignored build/ folder of this repo):
 #
 #   build/
-#   ├── Libraries/                 staging dir all dep scripts populate
-#   ├── dxvk/                      shallow clone of doitsujin/dxvk at tag
-#   ├── dxvk-out/                  package-native.sh destdir (recreated)
-#   └── dxvk.stamp                 last-built tag (cache key)
+#   ├── Libraries/                 SE1 staging dir all dep scripts populate
+#   ├── Libraries-SE2/             SE2 staging dir (--se2)
+#   ├── dxvk/                      shallow clone of doitsujin/dxvk at tag (SE1)
+#   ├── dxvk-out/                  package-native.sh destdir (SE1, recreated)
+#   ├── dxvk.stamp                 last-built SE1 tag (cache key)
+#   ├── dxvk-se2/                  separate clone for the patched SE2 build
+#   ├── dxvk-se2-out/              package-native.sh destdir (SE2, recreated)
+#   └── dxvk-se2.stamp             last-built SE2 tag + patch-series hash
+#
+# The SE2 variant uses its own clone rather than resetting the SE1 one, so a
+# patched tree can never leak into the pristine SE1 build (or vice versa) and
+# each variant stays independently cached.
 #
 # Usage:
-#   ./build_dxvk.sh           Build (or no-op if cached).
-#   ./build_dxvk.sh --clean   Wipe build dirs and rebuild from scratch.
+#   ./build_dxvk.sh           Build the SE1 variant (or no-op if cached).
+#   ./build_dxvk.sh --se2     Build the SE2 variant with Patches/dxvk/ applied.
+#   ./build_dxvk.sh --clean   Wipe the variant's build dirs and rebuild.
 #
 # SDL3 is required to build (see build_sdl3.sh, which this script invokes):
 # DXVK Native's window-system integration compiles against SDL3 headers and
 # dlopens libSDL3.so.0 at runtime. Ubuntu 24.04 has no libsdl3-dev package, so
 # a pinned SDL3 is built into build/sdl3-prefix/ and put on PKG_CONFIG_PATH
-# here. Nothing from SDL3 ends up in the release archive.
+# here. Nothing from SDL3 ends up in the release archives.
 #
 # Env-var overrides (defaults shown):
-#   DXVK_VERSION  = 2.7.1
-#   DXVK_REPO     = https://github.com/doitsujin/dxvk.git
-#   BUILD_DIR     = <repo>/build
-#   LIBRARIES_DIR = $BUILD_DIR/Libraries
-#   SDL3_PREFIX   = $BUILD_DIR/sdl3-prefix
-#   JOBS          = $(nproc)
+#   DXVK_VERSION      = 2.7.1
+#   DXVK_REPO         = https://github.com/doitsujin/dxvk.git
+#   BUILD_DIR         = <repo>/build
+#   LIBRARIES_DIR     = $BUILD_DIR/Libraries       (SE1 staging dir)
+#   LIBRARIES_SE2_DIR = $BUILD_DIR/Libraries-SE2   (SE2 staging dir)
+#   SDL3_PREFIX       = $BUILD_DIR/sdl3-prefix
+#   JOBS              = $(nproc)
 #
 # Requirements: git, meson (>=0.58), ninja, glslang (glslangValidator),
 # pkg-config, gcc, g++, patchelf, cmake (for the SDL3 build).
@@ -56,12 +77,11 @@ BUILD_DIR_DEFAULT="$REPO_DIR/build"
 
 BUILD_DIR="${BUILD_DIR:-$BUILD_DIR_DEFAULT}"
 LIBRARIES_DIR="${LIBRARIES_DIR:-$BUILD_DIR/Libraries}"
+LIBRARIES_SE2_DIR="${LIBRARIES_SE2_DIR:-$BUILD_DIR/Libraries-SE2}"
 SDL3_PREFIX="${SDL3_PREFIX:-$BUILD_DIR/sdl3-prefix}"
 JOBS="${JOBS:-$(nproc)}"
 
-DXVK_SRC_DIR="$BUILD_DIR/dxvk"
-DXVK_OUT_DIR="$BUILD_DIR/dxvk-out"
-STAMP_FILE="$BUILD_DIR/dxvk.stamp"
+PATCHES_DIR="$REPO_DIR/Patches/dxvk"
 
 EXPECTED_LIBS=(libdxvk_d3d11.so libdxvk_dxgi.so)
 
@@ -76,13 +96,51 @@ EXPECTED_STAGED=(
 )
 
 CLEAN=0
+VARIANT=se1
 for arg in "$@"; do
     case "$arg" in
         --clean)   CLEAN=1 ;;
-        -h|--help) sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --se2)     VARIANT=se2 ;;
+        -h|--help) sed -n '2,68p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
+
+# ---- variant wiring ---------------------------------------------------------
+
+if [ "$VARIANT" = "se2" ]; then
+    DXVK_SRC_DIR="$BUILD_DIR/dxvk-se2"
+    DXVK_OUT_DIR="$BUILD_DIR/dxvk-se2-out"
+    STAMP_FILE="$BUILD_DIR/dxvk-se2.stamp"
+    STAGE_DIR="$LIBRARIES_SE2_DIR"
+else
+    DXVK_SRC_DIR="$BUILD_DIR/dxvk"
+    DXVK_OUT_DIR="$BUILD_DIR/dxvk-out"
+    STAMP_FILE="$BUILD_DIR/dxvk.stamp"
+    STAGE_DIR="$LIBRARIES_DIR"
+fi
+
+# The patch series is part of the SE2 cache key: adding, editing or removing a
+# patch must invalidate the cached build. LC_ALL=C pins the sort order so the
+# hash does not depend on the host locale. An empty (or absent) series is
+# valid — the SE2 build is then upstream DXVK, staged separately.
+PATCH_FILES=()
+if [ "$VARIANT" = "se2" ] && [ -d "$PATCHES_DIR" ]; then
+    while IFS= read -r p; do
+        PATCH_FILES+=("$p")
+    done < <(find "$PATCHES_DIR" -maxdepth 1 -name '*.patch' | LC_ALL=C sort)
+fi
+
+if [ "$VARIANT" = "se2" ]; then
+    if [ "${#PATCH_FILES[@]}" -gt 0 ]; then
+        PATCH_HASH="$(cat "${PATCH_FILES[@]}" | sha256sum | cut -d' ' -f1)"
+    else
+        PATCH_HASH="no-patches"
+    fi
+    STAMP_CONTENT="$DXVK_VERSION patches=$PATCH_HASH"
+else
+    STAMP_CONTENT="$DXVK_VERSION"
+fi
 
 # ---- preflight --------------------------------------------------------------
 
@@ -93,23 +151,23 @@ for tool in git meson ninja glslangValidator pkg-config gcc g++ patchelf cmake; 
     }
 done
 
-mkdir -p "$BUILD_DIR" "$LIBRARIES_DIR"
+mkdir -p "$BUILD_DIR" "$STAGE_DIR"
 
 # ---- cache check ------------------------------------------------------------
 
 ALL_LIBS_PRESENT=1
 for lib in "${EXPECTED_STAGED[@]}"; do
-    [ -e "$LIBRARIES_DIR/$lib" ] || ALL_LIBS_PRESENT=0
+    [ -e "$STAGE_DIR/$lib" ] || ALL_LIBS_PRESENT=0
 done
 
 if [ "$CLEAN" = "1" ]; then
     rm -rf "$DXVK_SRC_DIR" "$DXVK_OUT_DIR"
 elif [ "$ALL_LIBS_PRESENT" = "1" ] \
    && [ -f "$STAMP_FILE" ] \
-   && [ "$(cat "$STAMP_FILE")" = "$DXVK_VERSION" ]; then
-    echo "==> Cached build matches DXVK $DXVK_VERSION; skipping rebuild"
-    echo "==> DXVK libs already in $LIBRARIES_DIR:"
-    ( cd "$LIBRARIES_DIR" && ls -1 libdxvk_*.so* )
+   && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
+    echo "==> Cached build matches DXVK $DXVK_VERSION ($VARIANT); skipping rebuild"
+    echo "==> DXVK libs already in $STAGE_DIR:"
+    ( cd "$STAGE_DIR" && ls -1 libdxvk_*.so* )
     exit 0
 fi
 
@@ -125,6 +183,34 @@ else
     git -C "$DXVK_SRC_DIR" fetch --depth 1 origin "tag" "v$DXVK_VERSION" || true
     git -C "$DXVK_SRC_DIR" -c advice.detachedHead=false checkout "v$DXVK_VERSION"
     git -C "$DXVK_SRC_DIR" submodule update --init --recursive --depth 1
+fi
+
+# ---- SE2 only: reset to pristine, then apply the patch series ---------------
+# The clone is cached across runs, so before applying patches the tree is
+# forced back to the pristine tag state — a previous run's applied patches (or
+# an edited series) would otherwise stack or conflict. This forfeits ninja
+# incrementality for the SE2 variant (clean -fdx removes the meson build
+# dirs), which is the price of a guaranteed pristine base for every series.
+
+if [ "$VARIANT" = "se2" ]; then
+    echo "==> Resetting DXVK source tree to pristine v$DXVK_VERSION"
+    git -C "$DXVK_SRC_DIR" checkout -- .
+    git -C "$DXVK_SRC_DIR" clean -fdx --quiet
+    git -C "$DXVK_SRC_DIR" submodule foreach --recursive --quiet \
+        'git checkout -- . && git clean -fdx --quiet'
+
+    if [ "${#PATCH_FILES[@]}" -eq 0 ]; then
+        echo "==> No patches under $PATCHES_DIR; SE2 build is pristine upstream"
+    fi
+    for p in ${PATCH_FILES[@]+"${PATCH_FILES[@]}"}; do
+        echo "==> Applying $(basename "$p")"
+        if ! git -C "$DXVK_SRC_DIR" apply "$p"; then
+            echo "ERROR: patch failed to apply: $p" >&2
+            echo "       The series under Patches/dxvk/ needs a rebase onto" >&2
+            echo "       DXVK v$DXVK_VERSION. See docs/maintenance.md." >&2
+            exit 1
+        fi
+    done
 fi
 
 # ---- SDL3 (build-time only) -------------------------------------------------
@@ -153,7 +239,7 @@ export PKG_CONFIG_PATH="$SDL3_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFI
 rm -rf "$DXVK_OUT_DIR"
 mkdir -p "$DXVK_OUT_DIR"
 
-echo "==> Running DXVK package-native.sh (64-only, no-package)"
+echo "==> Running DXVK package-native.sh (64-only, no-package, $VARIANT)"
 (
     cd "$DXVK_SRC_DIR"
     NINJA_OPTS="-j$JOBS" \
@@ -165,7 +251,7 @@ echo "==> Running DXVK package-native.sh (64-only, no-package)"
 # We `find` rather than hard-code the path so a future upstream rearrangement
 # (e.g. usr/lib64/, multiarch subdir) doesn't silently break the script.
 
-echo "==> Staging DXVK libs into $LIBRARIES_DIR"
+echo "==> Staging DXVK libs into $STAGE_DIR"
 for lib in "${EXPECTED_LIBS[@]}"; do
     # `-L` so find follows the unversioned .so symlink chain to the real
     # versioned file (libdxvk_*.so -> libdxvk_*.so.0 -> libdxvk_*.so.0.<ver>).
@@ -176,10 +262,10 @@ for lib in "${EXPECTED_LIBS[@]}"; do
         echo "ERROR: package-native.sh did not produce $lib under $DXVK_OUT_DIR" >&2
         exit 1
     fi
-    install -m 0755 "$src" "$LIBRARIES_DIR/$lib"
+    install -m 0755 "$src" "$STAGE_DIR/$lib"
     # Recreate the SONAME alias as a symlink so anything dlopen()ing the
     # SONAME directly (rare, but matches the pre-existing layout) finds it.
-    ln -sfn "$lib" "$LIBRARIES_DIR/${lib}.0"
+    ln -sfn "$lib" "$STAGE_DIR/${lib}.0"
 done
 
 # ---- patch DT_RUNPATH=$ORIGIN onto each .so --------------------------------
@@ -190,13 +276,13 @@ done
 
 echo "==> Patching DT_RUNPATH=\$ORIGIN onto DXVK libs"
 for lib in "${EXPECTED_LIBS[@]}"; do
-    patchelf --set-rpath '$ORIGIN' "$LIBRARIES_DIR/$lib"
+    patchelf --set-rpath '$ORIGIN' "$STAGE_DIR/$lib"
 done
 
 # ---- update cache stamp ----------------------------------------------------
 
-printf '%s\n' "$DXVK_VERSION" > "$STAMP_FILE"
+printf '%s\n' "$STAMP_CONTENT" > "$STAMP_FILE"
 
 echo
-echo "==> Staged DXVK libs into $LIBRARIES_DIR:"
-( cd "$LIBRARIES_DIR" && ls -1 libdxvk_*.so* )
+echo "==> Staged DXVK libs ($VARIANT) into $STAGE_DIR:"
+( cd "$STAGE_DIR" && ls -1 libdxvk_*.so* )

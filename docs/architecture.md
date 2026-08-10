@@ -28,15 +28,24 @@ for the PE-loader shims.
 
 ### In scope — built or shipped here
 
-| Artefact | Origin |
-| --- | --- |
-| `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | FFmpeg 8.1, built from the upstream release tarball |
-| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | DXVK Native 2.7.1, built from the upstream git tag |
-| `libopenal.so` | OpenAL Soft 1.25.2, built from the upstream release tarball |
-| `Steamworks.NET.dll` | Built from a pinned commit of rlabrecque/Steamworks.NET |
-| `libEOSSDK-Linux-Shipping.so` | Proprietary Epic blob, committed under `Vendor/` |
-| `libsteam_api.so` | Proprietary Valve blob, committed under `Vendor/` |
-| `LICENSES/*.txt` | Third-party licence texts and attribution, committed under `Licenses/` |
+| Artefact | Archive | Origin |
+| --- | --- | --- |
+| `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | SE1 | FFmpeg 8.1, built from the upstream release tarball |
+| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | SE1 | DXVK Native 2.7.1, built from the upstream git tag |
+| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` (patched) | SE2 | Same tag with the `Patches/dxvk/` series applied |
+| `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
+| `Steamworks.NET.dll` | SE1 | Built from a pinned commit of rlabrecque/Steamworks.NET |
+| `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
+| `libsteam_api.so` | SE1 | Proprietary Valve blob, committed under `Vendor/` |
+| `libfmod.so`, `libfmodstudio.so` | SE2 | Proprietary Firelight blobs, committed under `Vendor/se2/` |
+| `LICENSES/*.txt` | both | Third-party licence texts and attribution, committed under `Licenses/` |
+
+The SE2 archive exists because the Space Engineers 2 client needs two things
+SE1 does not: source-level DXVK fixes (which must not perturb the pristine
+build SE1 consumers ship) and the FMOD Engine runtime the game's audio is
+built on. It is a **separate release asset** rather than a subdirectory of the
+SE1 archive, so SE1 consumers never download or ship SE2 payload and the SE1
+contract is untouched by SE2 churn.
 
 ### Out of scope — deliberately not here
 
@@ -57,9 +66,11 @@ releases, a wrapper fix reaches consumers as soon as its own CI is green.
   CometWorks/linux-dependencies            CometWorks/linux-native-wrappers
   (this repo)                              (PE-loader shims)
         |                                             |
-        | release asset:                              | release asset:
+        | release assets:                             | release asset:
         | linux-dependencies.tar.gz                   | linux-native-wrappers.tar.gz
-        |                                             |
+        | linux-dependencies-se2.tar.gz               |
+        | (SE2 asset consumed by the SE2 port,        |
+        |  not shown below)                           |
         +---------------------+-----------------------+
                               |
                  fetched at build time by

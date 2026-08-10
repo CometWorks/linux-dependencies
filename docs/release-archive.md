@@ -1,18 +1,23 @@
-# The release archive
+# The release archives
 
 This document is the **contract** between this repo and its consumers. Pulsar
 and Magnetar extract the archive straight into their own `build/Libraries/`
 staging folder, so its layout is an API: changing it breaks them.
 
-## Asset
+## Assets
 
-Each release carries a single asset:
+Each release carries two assets:
 
 ```
-linux-dependencies.tar.gz
+linux-dependencies.tar.gz       Space Engineers 1 (Pulsar for Linux, Magnetar)
+linux-dependencies-se2.tar.gz   Space Engineers 2 (patched DXVK + FMOD)
 ```
 
-Roughly 24 MB, gzip-compressed tar, built by `build.sh`.
+The SE1 archive is roughly 24 MB, gzip-compressed tar, built by `build.sh`.
+The SE2 archive is smaller and is present only once the FMOD vendor blobs are
+committed under `Vendor/se2/` — until then `build.sh` skips it with a warning
+and the release carries the SE1 asset alone (see
+[Vendor/se2/README.md](../Vendor/se2/README.md)).
 
 Download the latest with:
 
@@ -21,7 +26,12 @@ curl -fL -o linux-dependencies.tar.gz \
   https://github.com/CometWorks/linux-dependencies/releases/latest/download/linux-dependencies.tar.gz
 ```
 
-## Layout
+```bash
+curl -fL -o linux-dependencies-se2.tar.gz \
+  https://github.com/CometWorks/linux-dependencies/releases/latest/download/linux-dependencies-se2.tar.gz
+```
+
+## Layout (SE1 archive)
 
 Every library sits at the archive root; licence texts sit in a single
 `LICENSES/` subdirectory. There is no top-level wrapper directory, so
@@ -82,11 +92,43 @@ LICENSES/Steamworks.NET-LICENSE.txt
 `build.sh` asserts this exact file list before packaging. If you change the
 layout, update both that `EXPECTED_FILES` array and this document.
 
+## Layout (SE2 archive)
+
+Same conventions: everything at the archive root, licences under `LICENSES/`,
+extraction into the consumer's staging directory is the whole staging step.
+
+```
+libdxvk_d3d11.so              DXVK 2.7.1 + the Patches/dxvk/ series
+libdxvk_d3d11.so.0            -> libdxvk_d3d11.so              (symlink)
+libdxvk_dxgi.so
+libdxvk_dxgi.so.0             -> libdxvk_dxgi.so               (symlink)
+libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
+libfmod.so.<N>                -> libfmod.so                    (SONAME symlink)
+libfmodstudio.so              FMOD Studio API runtime
+libfmodstudio.so.<N>          -> libfmodstudio.so              (SONAME symlink)
+LICENSES/DXVK-LICENSE.txt
+LICENSES/FMOD-NOTICE.txt
+LICENSES/README.txt
+```
+
+The `<N>` SONAME aliases are derived from the committed blobs at build time
+(`libfmod.so.14` for FMOD 2.03.x), so an FMOD update changes them without a
+script edit. `libfmodstudio.so`'s `NEEDED` entry references `libfmod` by
+SONAME, which is why the aliases ship. The DXVK files get the same
+`DT_RUNPATH=$ORIGIN` treatment as in the SE1 archive; the FMOD blobs are
+shipped **unmodified** (no patchelf), matching how the EOS and Steamworks
+blobs are handled, so the consumer must load `libfmod` before (or alongside)
+`libfmodstudio`.
+
+The corresponding `EXPECTED_FILES_SE2` array in `build.sh` is asserted only
+when the FMOD blobs are present.
+
 ## Which files each consumer needs
 
-The archive is shared, so each consumer extracts all of it and uses the subset
-it needs. Nothing breaks from staging an unused library, and keeping one
-archive avoids a client/server split that would have to be maintained forever.
+The SE1 archive is shared, so each SE1 consumer extracts all of it and uses
+the subset it needs. Nothing breaks from staging an unused library, and
+keeping one archive avoids a client/server split that would have to be
+maintained forever.
 
 | File | Pulsar (client) | Magnetar (server) |
 | --- | :---: | :---: |
@@ -97,6 +139,11 @@ archive avoids a client/server split that would have to be maintained forever.
 | `libsteam_api.so` | yes | yes |
 | `libEOSSDK-Linux-Shipping.so` | yes | yes |
 | `LICENSES/` | yes | the subset covering what it ships |
+
+The SE2 archive is consumed only by the Space Engineers 2 Linux port, which
+takes all of it. The two archives are kept separate — rather than a `se2/`
+subdirectory inside the SE1 archive — so SE1 consumers never download or ship
+SE2 payload, and the SE1 contract above is untouched by SE2 churn.
 
 ## Versioning and tags
 

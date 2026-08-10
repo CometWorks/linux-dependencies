@@ -1,18 +1,20 @@
 # Dependencies
 
-Every library in the release archive, where it comes from, and how it is
+Every library in the release archives, where it comes from, and how it is
 pinned. To change any of these, see [maintenance.md](maintenance.md).
 
 ## Summary
 
-| Dependency | Version / pin | Licence | Built by |
-| --- | --- | --- | --- |
-| FFmpeg | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
-| DXVK Native | tag `v2.7.1` | zlib | `Scripts/build_dxvk.sh` |
-| OpenAL Soft | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
-| Steamworks.NET | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
-| EOS SDK | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
-| Steamworks SDK | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
+| Dependency | Archive | Version / pin | Licence | Built by |
+| --- | --- | --- | --- | --- |
+| FFmpeg | SE1 | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
+| DXVK Native | SE1 | tag `v2.7.1` | zlib | `Scripts/build_dxvk.sh` |
+| DXVK Native + `Patches/dxvk/` series | SE2 | tag `v2.7.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh --se2` |
+| OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
+| Steamworks.NET | SE1 | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
+| EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
+| Steamworks SDK | SE1 | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
+| FMOD Engine | SE2 | vendor blob (manual), 2.03.11 to match the game | proprietary (Firelight) | committed under `Vendor/se2/` |
 
 `Scripts/build_sdl3.sh` builds SDL3 3.4.12 as well, but nothing from it is
 shipped — it exists only so DXVK has headers to compile against. See
@@ -97,14 +99,17 @@ pointer accurate.
 ## DXVK Native 2.7.1
 
 **Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so`, each with a `.so.0`
-SONAME symlink.
+SONAME symlink — twice: a pristine SE1 variant and a patched SE2 variant, see
+below.
 
 **Source:** `https://github.com/doitsujin/dxvk.git` at tag `v2.7.1`, shallow
-clone with submodules, cached under `build/dxvk/`.
+clone with submodules, cached under `build/dxvk/` (SE1) and `build/dxvk-se2/`
+(SE2).
 
-**Consumed by:** Pulsar only. Magnetar is headless and does not need a D3D11
-implementation. (The archive is shared, so Magnetar simply ignores these two
-files — see [consuming.md](consuming.md).)
+**Consumed by:** Pulsar (SE1 variant) and the Space Engineers 2 Linux port
+(SE2 variant). Magnetar is headless and does not need a D3D11 implementation.
+(The SE1 archive is shared, so Magnetar simply ignores these two files — see
+[consuming.md](consuming.md).)
 
 **How it is built:** by shelling out to upstream's own `package-native.sh`
 helper with `--64-only --no-package`, rather than re-implementing the meson
@@ -149,6 +154,37 @@ SDL3 3.5.0.
 
 **Caching:** `build/dxvk.stamp` records the built version. A rerun with the
 same `DXVK_VERSION` and all outputs present skips the build entirely.
+
+### The SE2 variant
+
+`build_dxvk.sh --se2` builds the same pinned tag a second time with the patch
+series under [Patches/dxvk/](../Patches/dxvk/) applied first, and stages the
+result into `build/Libraries-SE2/` for the SE2 archive. The patches are
+source-level fixes for DXVK bugs the Space Engineers 2 client hits; fixing
+them here replaces what would otherwise be a much larger set of managed
+(Harmony) runtime patches in the SE2 compatibility layer. The rationale for
+each patch is documented in `Patches/dxvk/README.md` alongside its
+provenance.
+
+Mechanics worth knowing:
+
+* **Separate clone.** The SE2 build uses `build/dxvk-se2/`, not a reset of
+  the SE1 clone, so a patched tree can never leak into the pristine SE1 build
+  and both variants stay independently cached.
+* **Pristine base every run.** The cached SE2 clone is reset
+  (`git checkout -- .` + `git clean -fdx`, including submodules) before the
+  series is applied, so patches never stack across runs. This forfeits ninja
+  incrementality for the SE2 variant — the price of a guaranteed clean base.
+* **The series is part of the cache key.** `build/dxvk-se2.stamp` records
+  `<version> patches=<sha256 of the series>`, so adding, editing or removing
+  a patch rebuilds the SE2 variant only. An empty series is valid and builds
+  pristine upstream.
+* **A patch that fails to apply fails the build**, naming the patch — the
+  signal that a `DXVK_VERSION` bump needs the series rebased.
+
+The SE1 variant is deliberately left untouched by all of this: SE1 consumers
+keep shipping byte-identical pristine DXVK, so the patches never need to be
+reviewed for SE1 regressions.
 
 ---
 

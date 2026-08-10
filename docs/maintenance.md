@@ -40,14 +40,28 @@ to need editing regardless.
 ## Bumping DXVK
 
 1. Set `DXVK_VERSION` in `Scripts/build_dxvk.sh` to the new tag (without the
-   leading `v`; the script adds it).
-2. Build. The stamp file invalidates automatically.
-3. If upstream ever renames `package-native.sh` or changes its arguments, the
+   leading `v`; the script adds it). Both variants (SE1 and SE2) build from
+   the same pin.
+2. Build. The stamp files invalidate automatically.
+3. **Rebase the SE2 patch series.** If any patch under `Patches/dxvk/` no
+   longer applies, the SE2 build fails naming the patch. Regenerate the series
+   against the new tag (apply on a scratch clone, resolve, re-export with
+   `git diff` / `git format-patch`) and update the provenance table in
+   `Patches/dxvk/README.md`.
+4. If upstream ever renames `package-native.sh` or changes its arguments, the
    build fails at that call — adjust the invocation rather than
    re-implementing the meson build.
-4. DXVK's Vulkan requirements move over time. A newer DXVK may need a newer
+5. DXVK's Vulkan requirements move over time. A newer DXVK may need a newer
    `libvulkan-dev` on the runner and a newer Vulkan driver on users' machines;
    check upstream's release notes before bumping across a major version.
+
+## Changing the SE2 DXVK patch series
+
+Add, edit or remove `Patches/dxvk/NNNN-*.patch` files; the series hash is
+part of `build/dxvk-se2.stamp`, so the next build rebuilds the SE2 variant
+automatically (the SE1 variant is untouched by definition). For every patch,
+record in `Patches/dxvk/README.md` what it fixes and where it came from.
+Patches are applied with `git apply` in byte-wise filename order.
 
 ## Bumping SDL3
 
@@ -105,12 +119,32 @@ manually maintained.
 Redistribution here relies on agreements the maintainers have accepted; see
 [Vendor/README.md](../Vendor/README.md).
 
+## Updating the FMOD blobs (SE2)
+
+`Vendor/se2/libfmod.so` and `Vendor/se2/libfmodstudio.so` are proprietary and
+manually maintained, like the blobs above — but version-locked to the game:
+the FMOD wrapper inside Space Engineers 2 is generated for the FMOD version
+the game ships, so the blobs must match it at least to the minor release.
+
+1. Find the game's FMOD version:
+   `strings -el "<SE2 game dir>/fmod.dll" | grep -A1 FileVersion`
+2. Download that FMOD Engine version for Linux from
+   <https://www.fmod.com/download> (login required).
+3. Copy the two x86_64 release-variant runtimes under the bare names —
+   the exact paths and rules are in [Vendor/se2/README.md](../Vendor/se2/README.md).
+4. Commit and push. `build.sh` re-derives the SONAME alias symlinks from the
+   new blobs, so no script change is needed.
+
+While these blobs are absent, `build.sh` skips the SE2 archive with a warning
+instead of failing — committing them for the first time is what activates the
+SE2 release asset.
+
 ## Changing the archive layout
 
-The archive layout is a contract with the consumers — see
-[release-archive.md](release-archive.md). If you change it:
+The archive layouts are a contract with the consumers — see
+[release-archive.md](release-archive.md). If you change one:
 
-1. Update `EXPECTED_FILES` in `build.sh`.
+1. Update `EXPECTED_FILES` (SE1) or `EXPECTED_FILES_SE2` in `build.sh`.
 2. Update the layout and file-list sections of `release-archive.md`.
 3. Update both consumers' `fetch_linux_dependencies.sh` **before** merging
    here, because they will pick the new archive up on their next build with no

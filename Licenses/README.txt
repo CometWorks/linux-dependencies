@@ -26,3 +26,7 @@ libRecastDetour.so, libVRageNative.so) are MIT-licensed and are NOT part of
 this archive; they are published separately by the
 CometWorks/linux-native-wrappers repository, which ships its own licence
 text.
+
+The Space Engineers 2 companion archive (linux-dependencies-se2.tar.gz)
+carries its own LICENSES directory, sourced from the se2/ subdirectory of
+the repository's Licenses/ folder; none of those notices ship here.

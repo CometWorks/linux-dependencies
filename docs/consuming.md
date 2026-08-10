@@ -1,8 +1,11 @@
 # Consuming the release
 
 Both [Pulsar for Linux](https://github.com/CometWorks/Pulsar) (`linux` branch)
-and [Magnetar](https://github.com/CometWorks/magnetar) fetch the release
-archive at build time instead of building these dependencies themselves.
+and [Magnetar](https://github.com/CometWorks/magnetar) fetch the SE1 release
+archive (`linux-dependencies.tar.gz`) at build time instead of building these
+dependencies themselves. The SE2 archive (`linux-dependencies-se2.tar.gz`) is
+for the Space Engineers 2 Linux port — see
+[the SE2 archive](#the-se2-archive) below.
 
 Each consumer has a `Scripts/fetch_linux_dependencies.sh` that resolves a
 release and downloads `linux-dependencies.tar.gz`. The two copies are
@@ -110,6 +113,25 @@ Every library is probed in the same order, most specific first:
 
 So a locally supplied `.so` still wins over the release, and `build.sh` prints
 exactly which path each file came from.
+
+## The SE2 archive
+
+The Space Engineers 2 Linux port consumes `linux-dependencies-se2.tar.gz`,
+which carries the patched DXVK build and the FMOD Engine runtime — see
+[release-archive.md](release-archive.md#layout-se2-archive) for the exact
+contents. It follows the same fetch pattern (same release, second asset name)
+and the same rules: extract with symlink-preserving `tar`, keep `LICENSES/`
+next to the binaries.
+
+Two SE2-specific notes:
+
+* The FMOD blobs ship **unmodified** (no `DT_RUNPATH` patching), and
+  `libfmodstudio.so` references `libfmod` by SONAME. Load (or preload)
+  `libfmod` before `libfmodstudio`, or make sure the staging directory is on
+  the loader's search path for that resolution.
+* The asset exists only in releases built after the FMOD blobs were committed
+  under `Vendor/se2/`; a fetch script should fail with a clear message when
+  the asset is missing from an old pinned tag.
 
 ## Adding a new consumer
 

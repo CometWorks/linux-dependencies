@@ -2,8 +2,15 @@ name: Build
 
 # Builds the Space Engineers Linux binary dependencies (FFmpeg, DXVK Native,
 # Steamworks.NET) and publishes them, together with the committed proprietary
-# vendor blobs and the third-party licence texts, as a single tar.gz release
-# asset. Pulsar for Linux and Magnetar both consume that archive.
+# vendor blobs and the third-party licence texts, as tar.gz release assets:
+#
+#   * linux-dependencies.tar.gz      Space Engineers 1 — consumed by Pulsar
+#                                    for Linux and Magnetar.
+#   * linux-dependencies-se2.tar.gz  Space Engineers 2 — patched DXVK build
+#                                    plus the FMOD runtime. Only produced once
+#                                    the FMOD blobs are committed under
+#                                    Vendor/se2/ (build.sh skips it with a
+#                                    warning until then; see Vendor/se2/README.md).
 #
 #   * push to main        -> build, then publish a PUBLIC release tagged
 #                            v1.0.<run_number> and marked "latest".
@@ -76,7 +83,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: linux-dependencies
-          path: dist/linux-dependencies.tar.gz
+          # Wildcard so the SE2 archive is included when build.sh produced it
+          # (it is skipped until the FMOD blobs are committed to Vendor/se2/).
+          path: dist/*.tar.gz
           if-no-files-found: error
 
       # Skipped for pull requests from forks: GITHUB_TOKEN is read-only for
@@ -89,7 +98,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          asset="dist/linux-dependencies.tar.gz"
+          assets=(dist/linux-dependencies.tar.gz)
+          # The SE2 archive exists only once the FMOD blobs are committed
+          # under Vendor/se2/ — include it when build.sh produced it.
+          if [ -f dist/linux-dependencies-se2.tar.gz ]; then
+            assets+=(dist/linux-dependencies-se2.tar.gz)
+          fi
 
           if [ "${{ github.event_name }}" = "push" ]; then
             # Push to main -> public, tagged, latest.
@@ -100,7 +114,7 @@ jobs:
               --target "${{ github.sha }}" \
               --title "Linux Dependencies $tag" \
               --notes "Automated build of the Space Engineers Linux binary dependencies from commit ${{ github.sha }}." \
-              "$asset"
+              "${assets[@]}"
           else
             # Non-draft PR -> draft release: not public, not latest, and no git
             # tag is created until a maintainer publishes it. One draft is kept
@@ -118,5 +132,5 @@ jobs:
               --target "${{ github.event.pull_request.head.sha }}" \
               --title "Linux Dependencies (PR #${{ github.event.pull_request.number }})" \
               --notes "Draft build for PR #${{ github.event.pull_request.number }} (commit ${{ github.event.pull_request.head.sha }})." \
-              "$asset"
+              "${assets[@]}"
           fi

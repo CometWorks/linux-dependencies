@@ -1,7 +1,9 @@
 # Vendor blobs
 
 This directory contains the **proprietary** native libraries that this repo
-ships inside its release archive. They are committed here instead of being
+ships inside its release archives. The blobs at this level go into the SE1
+archive; the FMOD runtime for the SE2 archive lives in
+[se2/](se2/README.md) on the same terms. They are committed here instead of being
 downloaded by the build pipeline because their distribution requires
 accepting per-vendor agreements that the maintainer has signed once, and the
 upstream download endpoints are gated behind logged-in partner portals (no

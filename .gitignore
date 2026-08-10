@@ -222,4 +222,6 @@ __marimo__/
 # The proprietary EOS and Steamworks runtimes are deliberately committed under
 # Vendor/ - they have no public source and no fetchable binary. See
 # Vendor/README.md. The blanket *.so rule above would otherwise exclude them.
+# Vendor/se2/ holds the FMOD runtime for the SE2 archive on the same terms.
 !Vendor/*.so
+!Vendor/se2/*.so

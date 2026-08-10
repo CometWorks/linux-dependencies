@@ -1,0 +1,31 @@
+FMOD Engine
+===========
+
+The shared libraries shipped alongside this notice as:
+
+    libfmod.so         (FMOD Core API runtime)
+    libfmodstudio.so   (FMOD Studio API runtime)
+
+are the FMOD Engine runtime, distributed by Firelight Technologies Pty Ltd.
+
+License
+-------
+Proprietary. Use and redistribution of the FMOD Engine is governed by the
+FMOD End User License Agreement, which permits redistribution of the
+unmodified runtime libraries as part of a product. The full agreement is
+available at:
+
+    https://www.fmod.com/legal
+
+Attribution
+-----------
+Made with FMOD Studio by Firelight Technologies Pty Ltd.
+
+"FMOD" and the FMOD logo are trademarks of Firelight Technologies Pty Ltd.
+
+These libraries are included solely to interoperate with Space Engineers 2's
+existing FMOD audio integration. No part of the FMOD Engine source code or
+tools is included; only the unmodified shipping binaries are redistributed.
+The shipped version matches the FMOD version the game itself uses.
+
+Copyright (c) Firelight Technologies Pty Ltd. All rights reserved.

@@ -39,8 +39,12 @@ for.
 ./build.sh
 ```
 
-Builds every dependency, stages `build/Libraries/`, verifies the staged tree,
-and packages `dist/linux-dependencies.tar.gz`.
+Builds every dependency, stages `build/Libraries/` (SE1) and
+`build/Libraries-SE2/` (SE2), verifies the staged trees, and packages
+`dist/linux-dependencies.tar.gz` plus — once the FMOD blobs are committed
+under `Vendor/se2/` — `dist/linux-dependencies-se2.tar.gz`. Until then the
+SE2 archive is skipped with a warning; see
+[Vendor/se2/README.md](../Vendor/se2/README.md).
 
 A cold first run takes roughly 10–20 minutes, dominated by FFmpeg and DXVK.
 Subsequent runs are near-instant when nothing changed — see
@@ -52,7 +56,7 @@ Subsequent runs are near-instant when nothing changed — see
 | --- | --- |
 | `--clean` | Passes `--clean` to every sub-build: wipes cached source and build trees and rebuilds from scratch |
 | `--no-package` | Stages `build/Libraries/` but skips the tarball |
-| `--only=ffmpeg,dxvk` | Runs only the listed sub-builds. Valid names: `ffmpeg`, `dxvk`, `openal`, `steamworks-net`. An unknown name is rejected rather than silently skipping everything |
+| `--only=ffmpeg,dxvk` | Runs only the listed sub-builds. Valid names: `ffmpeg`, `dxvk`, `dxvk-se2`, `openal`, `steamworks-net`. An unknown name is rejected rather than silently skipping everything |
 | `--skip=dxvk` | Runs every sub-build except the listed ones |
 | `-h`, `--help` | Prints the header comment |
 
@@ -70,6 +74,7 @@ packaging is skipped.
 | `REPO_DIR` | directory containing `build.sh` |
 | `BUILD_DIR` | `$REPO_DIR/build` |
 | `LIBRARIES_DIR` | `$BUILD_DIR/Libraries` |
+| `LIBRARIES_SE2_DIR` | `$BUILD_DIR/Libraries-SE2` |
 | `OUTPUT_DIR` | `$REPO_DIR/dist` |
 | `VENDOR_DIR` | `$REPO_DIR/Vendor` |
 | `LICENSES_SRC` | `$REPO_DIR/Licenses` |
@@ -98,7 +103,8 @@ rerun does no work:
 | Dependency | Cache | Invalidated by |
 | --- | --- | --- |
 | FFmpeg | `build/ffmpeg-8.1.tar.xz` (download), `build/ffmpeg-8.1/` (source), `build/ffmpeg-8.1/_build/` (objects) | A changed `configure` flag set, tracked by a hash in `_build/.configure_flags`; otherwise an incremental `make` |
-| DXVK | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` |
+| DXVK (SE1) | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` |
+| DXVK (SE2) | `build/dxvk-se2/` (clone), `build/dxvk-se2.stamp` | A changed `DXVK_VERSION` **or** any change to the `Patches/dxvk/*.patch` series (its SHA-256 is part of the stamp) |
 | SDL3 | `build/SDL/` (clone), `build/sdl3-prefix/`, `build/sdl3.stamp` | A changed `SDL3_VERSION` |
 | OpenAL | `build/openal-soft-1.25.2.tar.bz2`, `build/openal-soft-1.25.2/`, `build/openal.stamp` | A changed `OPENAL_VERSION` |
 | Steamworks.NET | `build/Steamworks.NET/` (clone), `build/steamworks-net.stamp` | A changed `STEAMWORKS_NET_COMMIT` |
@@ -110,7 +116,8 @@ dependency for DXVK's headers and is never shipped. See
 To force specific work:
 
 ```bash
-rm build/dxvk.stamp                # rebuild DXVK only
+rm build/dxvk.stamp                # rebuild DXVK (SE1) only
+rm build/dxvk-se2.stamp            # rebuild DXVK (SE2) only
 rm -rf build/ffmpeg-8.1            # re-extract and reconfigure FFmpeg
 rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball
 ./build.sh --clean                 # rebuild everything from scratch
@@ -121,13 +128,15 @@ rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball
 After a successful run:
 
 ```
-build/Libraries/           staged tree (what the archive mirrors)
-dist/linux-dependencies.tar.gz   the release archive
+build/Libraries/                       staged SE1 tree (what the SE1 archive mirrors)
+build/Libraries-SE2/                   staged SE2 tree
+dist/linux-dependencies.tar.gz         the SE1 release archive
+dist/linux-dependencies-se2.tar.gz     the SE2 release archive (only with the
+                                       FMOD blobs committed under Vendor/se2/)
 ```
 
-Both directories are gitignored. See
-[release-archive.md](release-archive.md) for the exact contents and the
-guarantees consumers rely on.
+All of it is gitignored. See [release-archive.md](release-archive.md) for the
+exact contents and the guarantees consumers rely on.
 
 ## Troubleshooting
 
@@ -160,3 +169,12 @@ file.
 **`ERROR: missing vendor blob:`** — `Vendor/libEOSSDK-Linux-Shipping.so` or
 `Vendor/libsteam_api.so` is absent. These are committed; a fresh clone has
 them, so this usually means a partial checkout.
+
+**`WARNING: FMOD vendor blobs not found under Vendor/se2/`** — expected until
+the FMOD runtime is committed there; the SE2 archive is skipped and the SE1
+build is unaffected. To produce the SE2 archive, follow
+[Vendor/se2/README.md](../Vendor/se2/README.md).
+
+**`ERROR: patch failed to apply:`** — a patch under `Patches/dxvk/` no longer
+applies to the pinned DXVK version, usually after a `DXVK_VERSION` bump.
+Rebase the series; see [maintenance.md](maintenance.md#bumping-dxvk).
