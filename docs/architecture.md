@@ -34,22 +34,25 @@ for the PE-loader shims.
 | `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 2.7.1 + the `Patches/dxvk/` series, built once from the upstream git tag |
 | `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | SE2 | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series |
 | `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
-| `Steamworks.NET.dll` | SE1 | Built from a pinned commit of rlabrecque/Steamworks.NET |
+| `Steamworks.NET.dll` | Steam | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
-| `libsteam_api.so` | SE1 | Proprietary Valve blob, committed under `Vendor/` |
+| `libsteam_api.so` | Steam | Proprietary Valve blob, committed under `Vendor/` |
 | `libfmod.so`, `libfmodstudio.so` | SE2 | Proprietary Firelight blobs, committed under `Vendor/` |
-| `LICENSES/*.txt` | both | Third-party licence texts and attribution, committed under `Licenses/` |
+| `LICENSES/*.txt` | all | Third-party licence texts and attribution, committed under `Licenses/` |
 
-Two policies shape the archive split:
+Three policies shape the archive split:
 
-* **The SE1 archive's library set never grows with SE2 work.** It contains
-  exactly what it did before the split. Libraries it already shipped may
-  gain source-level patches (DXVK, see `Patches/dxvk/`), and those patched
-  binaries are built once and shipped as the same bytes in both archives —
-  one build to test, no variant drift.
+* **Patched libraries are built once and shipped as the same bytes
+  everywhere they appear.** DXVK (see `Patches/dxvk/`) ships identically in
+  the SE1 and SE2 archives — one build to test, no variant drift.
 * **Everything new with the SE2 port ships only in the SE2 archive.**
-  vkd3d-proton and FMOD go to `linux-dependencies-se2.tar.gz` alone, so SE1
+  vkd3d-proton and FMOD go to `se2-dependencies.tar.gz` alone, so SE1
   consumers never download or ship libraries they cannot use.
+* **The Steam bits ship in their own archive.** `Steamworks.NET.dll` and
+  `libsteam_api.so` belong together (the managed binding and its native
+  runtime) and are game-agnostic, so `steam-dependencies.tar.gz` is
+  consumed alongside either game archive and a Steamworks update republishes
+  neither game payload.
 
 ### Out of scope — deliberately not here
 
@@ -73,10 +76,12 @@ releases, a wrapper fix reaches consumers as soon as its own CI is green.
   (this repo)                              (PE-loader shims)
         |                                             |
         | release assets:                             | release asset:
-        | linux-dependencies.tar.gz                   | linux-native-wrappers.tar.gz
-        | linux-dependencies-se2.tar.gz               |
-        | (SE2 asset consumed by the SE2 port,        |
-        |  not shown below)                           |
+        | se1-dependencies.tar.gz                     | linux-native-wrappers.tar.gz
+        | se2-dependencies.tar.gz                     |
+        | steam-dependencies.tar.gz                   |
+        | (the SE2 asset is consumed by the SE2       |
+        |  port, not shown below; the Steam asset     |
+        |  is consumed by all of them)                |
         +---------------------+-----------------------+
                               |
                  fetched at build time by
@@ -143,7 +148,7 @@ the `ldd` allow-list in `build_ffmpeg.sh` is what keeps it that way. See
 
 ### The proprietary blobs are committed, not downloaded
 
-EOS and Steamworks have no public source and no publicly fetchable binary — the
-downloads sit behind logged-in partner portals. Committing the two `.so` files
-under `Vendor/` is the only practical option; see
+EOS, Steamworks and FMOD have no public source and no publicly fetchable
+binary — the downloads sit behind logged-in partner portals. Committing the
+`.so` files under `Vendor/` is the only practical option; see
 [Vendor/README.md](../Vendor/README.md) for their provenance and licensing.

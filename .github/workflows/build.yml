@@ -2,18 +2,18 @@ name: Build
 
 # Builds the Space Engineers Linux binary dependencies (FFmpeg, DXVK Native,
 # vkd3d-proton, OpenAL Soft, Steamworks.NET) and publishes them, together
-# with the committed vendor blobs and the third-party licence texts, as two
-# tar.gz release assets:
+# with the committed vendor blobs and the third-party licence texts, as
+# three tar.gz release assets:
 #
-#   * linux-dependencies.tar.gz      Space Engineers 1 — consumed by Pulsar
-#                                    for Linux and Magnetar. Same library set
-#                                    as before the SE2 split.
-#   * linux-dependencies-se2.tar.gz  Space Engineers 2 — the same patched
-#                                    DXVK build plus vkd3d-proton and the
-#                                    FMOD runtime.
+#   * se1-dependencies.tar.gz    Space Engineers 1 — consumed by Pulsar for
+#                                Linux and Magnetar.
+#   * se2-dependencies.tar.gz    Space Engineers 2 — the same patched DXVK
+#                                build plus vkd3d-proton and the FMOD runtime.
+#   * steam-dependencies.tar.gz  Steamworks.NET.dll + libsteam_api.so,
+#                                consumed alongside either of the above.
 #
 # DXVK is built once with its Patches/ series applied; the identical
-# binaries ship in both archives. vkd3d-proton is SE2-only.
+# binaries ship in both game archives. vkd3d-proton is SE2-only.
 #
 #   * push to main        -> build, then publish a PUBLIC release tagged
 #                            v1.0.<run_number> and marked "latest".
@@ -91,8 +91,9 @@ jobs:
         with:
           name: linux-dependencies
           path: |
-            dist/linux-dependencies.tar.gz
-            dist/linux-dependencies-se2.tar.gz
+            dist/se1-dependencies.tar.gz
+            dist/se2-dependencies.tar.gz
+            dist/steam-dependencies.tar.gz
           if-no-files-found: error
 
       # Skipped for pull requests from forks: GITHUB_TOKEN is read-only for
@@ -105,7 +106,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          assets=(dist/linux-dependencies.tar.gz dist/linux-dependencies-se2.tar.gz)
+          assets=(dist/se1-dependencies.tar.gz
+                  dist/se2-dependencies.tar.gz
+                  dist/steam-dependencies.tar.gz)
 
           if [ "${{ github.event_name }}" = "push" ]; then
             # Push to main -> public, tagged, latest.

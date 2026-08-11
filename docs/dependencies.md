@@ -15,9 +15,9 @@ byte-identically with the SE2 archive.
 | DXVK Native + `Patches/dxvk/` series | both | tag `v2.7.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
 | vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
 | OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
-| Steamworks.NET | SE1 | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
+| Steamworks.NET | Steam | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
-| Steamworks SDK | SE1 | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
+| Steamworks SDK | Steam | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
 | FMOD Engine | SE2 | vendor blob (manual), 2.03.11 to match the game | proprietary (Firelight) | committed under `Vendor/` |
 
 `Scripts/build_sdl3.sh` builds SDL3 3.4.12 as well, but nothing from it is
@@ -280,7 +280,9 @@ FFmpeg and DXVK.
 
 ## Steamworks.NET
 
-**Produces:** `Steamworks.NET.dll` (managed, `net8.0`).
+**Produces:** `Steamworks.NET.dll` (managed, `net8.0`), staged into
+`build/Libraries-Steam/` and shipped in the Steam archive next to
+`libsteam_api.so`, the native runtime it P/Invokes.
 
 **Source:** `https://github.com/rlabrecque/Steamworks.NET.git` at commit
 `68e72a49caf03a07722d4d4b471bbc7c0785f80b`, built from
@@ -312,7 +314,8 @@ Two proprietary runtimes are committed under `Vendor/` rather than built:
   Needed by both consumers: Pulsar for the client's EOS integration, and
   Magnetar because `MySteamService.UpdateNetworkThread` drives
   `MyEOSNetworking` even under Steam-only networking.
-* **`libsteam_api.so`** — the Steamworks SDK runtime.
+* **`libsteam_api.so`** — the Steamworks SDK runtime, shipped in the Steam
+  archive next to `Steamworks.NET.dll`.
 
 Neither has a public source repository or a publicly fetchable binary; both
 downloads are gated behind logged-in partner portals. Updating them is a manual

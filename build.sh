@@ -3,18 +3,20 @@
 #
 # Top-level orchestrator for the Space Engineers Linux binary dependencies.
 # Builds every library from source ONCE, stages the results in
-# build/Libraries/ (Space Engineers 1) and build/Libraries-SE2/ (Space
-# Engineers 2), verifies both staged trees, and packages them as two release
-# archives:
+# build/Libraries/ (Space Engineers 1), build/Libraries-SE2/ (Space
+# Engineers 2) and build/Libraries-Steam/ (Steam integration), verifies the
+# staged trees, and packages them as three release archives:
 #
-#   dist/linux-dependencies.tar.gz       SE1 (Pulsar for Linux, Magnetar)
-#   dist/linux-dependencies-se2.tar.gz   SE2 (Space Engineers 2 Linux port)
+#   dist/se1-dependencies.tar.gz     SE1 (Pulsar for Linux, Magnetar)
+#   dist/se2-dependencies.tar.gz     SE2 (Space Engineers 2 Linux port)
+#   dist/steam-dependencies.tar.gz   Steamworks.NET.dll + libsteam_api.so,
+#                                    consumed alongside either of the above
 #
-# The SE1 archive contains exactly the same library set as before the SE2
-# split — no additions. Its DXVK files are the patched build (Patches/dxvk/),
-# shared byte-identically with the SE2 archive, and nothing is built twice.
+# The SE1 archive's DXVK files are the patched build (Patches/dxvk/), shared
+# byte-identically with the SE2 archive, and nothing is built twice.
 # Everything new with the SE2 port (vkd3d-proton, FMOD) ships in the SE2
-# archive only.
+# archive only; the Steam bits ship in their own archive so a Steamworks
+# update does not republish the game-specific payloads.
 #
 # Pipeline (in order):
 #
@@ -24,19 +26,22 @@
 #   3. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
 #                                       Patches/vkd3d-proton/, staged straight
 #                                       into Libraries-SE2/
-#   4. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so*)
-#   5. Scripts/build_steamworks_net.sh  Steamworks.NET.dll
+#   4. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so)
+#   5. Scripts/build_steamworks_net.sh  Steamworks.NET.dll, staged straight
+#                                       into Libraries-Steam/
 #   6. Shared-artefact copy:            the patched DXVK files from
 #                                       Libraries/ into Libraries-SE2/
-#   7. Vendor copy:                     libEOSSDK-Linux-Shipping.so + libsteam_api.so
+#   7. Vendor copy:                     libEOSSDK-Linux-Shipping.so -> SE1,
+#                                       libsteam_api.so -> Steam
 #                                       (proprietary, committed under Vendor/)
 #   8. SE2 vendor copy:                 the FMOD runtime from Vendor/, staged
 #                                       under the bare names (libfmod.so +
 #                                       libfmodstudio.so)
 #   9. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
-#                                       DXVK + Licenses/se2/*.txt -> LICENSES/ (SE2)
+#                                       DXVK + Licenses/se2/*.txt -> LICENSES/ (SE2);
+#                                       Licenses/steam/*.txt -> LICENSES/ (Steam)
 #  10. Final assertion:                 every expected artefact is present
-#  11. Package:                         both archives under dist/
+#  11. Package:                         all three archives under dist/
 #
 # The native wrapper libraries (libD3DCompiler.so, libHavok.so,
 # libRecastDetour.so, libVRageNative.so) are deliberately NOT part of this
@@ -56,14 +61,15 @@
 # final assertion is reported but not fatal and packaging is skipped.
 #
 # Env-var overrides (defaults shown):
-#   REPO_DIR          = <dir of this script>
-#   BUILD_DIR         = $REPO_DIR/build
-#   LIBRARIES_DIR     = $BUILD_DIR/Libraries
-#   LIBRARIES_SE2_DIR = $BUILD_DIR/Libraries-SE2
-#   OUTPUT_DIR        = $REPO_DIR/dist
-#   VENDOR_DIR        = $REPO_DIR/Vendor
-#   LICENSES_SRC      = $REPO_DIR/Licenses
-#   JOBS              = $(nproc)
+#   REPO_DIR            = <dir of this script>
+#   BUILD_DIR           = $REPO_DIR/build
+#   LIBRARIES_DIR       = $BUILD_DIR/Libraries
+#   LIBRARIES_SE2_DIR   = $BUILD_DIR/Libraries-SE2
+#   LIBRARIES_STEAM_DIR = $BUILD_DIR/Libraries-Steam
+#   OUTPUT_DIR          = $REPO_DIR/dist
+#   VENDOR_DIR          = $REPO_DIR/Vendor
+#   LICENSES_SRC        = $REPO_DIR/Licenses
+#   JOBS                = $(nproc)
 #
 # Requirements: see docs/building.md. In short: gcc, g++, make, meson, ninja,
 # glslangValidator, pkg-config, curl, tar, git, nasm (or yasm), patchelf,
@@ -78,14 +84,16 @@ REPO_DIR="${REPO_DIR:-$SCRIPT_DIR}"
 BUILD_DIR="${BUILD_DIR:-$REPO_DIR/build}"
 LIBRARIES_DIR="${LIBRARIES_DIR:-$BUILD_DIR/Libraries}"
 LIBRARIES_SE2_DIR="${LIBRARIES_SE2_DIR:-$BUILD_DIR/Libraries-SE2}"
+LIBRARIES_STEAM_DIR="${LIBRARIES_STEAM_DIR:-$BUILD_DIR/Libraries-Steam}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPO_DIR/dist}"
 VENDOR_DIR="${VENDOR_DIR:-$REPO_DIR/Vendor}"
 LICENSES_SRC="${LICENSES_SRC:-$REPO_DIR/Licenses}"
 
-ARCHIVE_NAME="linux-dependencies.tar.gz"
-ARCHIVE_NAME_SE2="linux-dependencies-se2.tar.gz"
+ARCHIVE_NAME="se1-dependencies.tar.gz"
+ARCHIVE_NAME_SE2="se2-dependencies.tar.gz"
+ARCHIVE_NAME_STEAM="steam-dependencies.tar.gz"
 
-export REPO_DIR BUILD_DIR LIBRARIES_DIR LIBRARIES_SE2_DIR
+export REPO_DIR BUILD_DIR LIBRARIES_DIR LIBRARIES_SE2_DIR LIBRARIES_STEAM_DIR
 
 # ---- arg parsing ------------------------------------------------------------
 
@@ -146,7 +154,8 @@ want_step() {
 
 # ---- preflight --------------------------------------------------------------
 
-mkdir -p "$LIBRARIES_DIR/LICENSES" "$LIBRARIES_SE2_DIR/LICENSES"
+mkdir -p "$LIBRARIES_DIR/LICENSES" "$LIBRARIES_SE2_DIR/LICENSES" \
+         "$LIBRARIES_STEAM_DIR/LICENSES"
 
 [ -d "$VENDOR_DIR" ] || {
     echo "ERROR: $VENDOR_DIR not found." >&2
@@ -161,11 +170,12 @@ mkdir -p "$LIBRARIES_DIR/LICENSES" "$LIBRARIES_SE2_DIR/LICENSES"
     exit 1
 }
 
-echo "==> Repo dir        : $REPO_DIR"
-echo "==> Build dir       : $BUILD_DIR"
-echo "==> Staging dir     : $LIBRARIES_DIR"
-echo "==> SE2 staging dir : $LIBRARIES_SE2_DIR"
-echo "==> Output dir      : $OUTPUT_DIR"
+echo "==> Repo dir          : $REPO_DIR"
+echo "==> Build dir         : $BUILD_DIR"
+echo "==> SE1 staging dir   : $LIBRARIES_DIR"
+echo "==> SE2 staging dir   : $LIBRARIES_SE2_DIR"
+echo "==> Steam staging dir : $LIBRARIES_STEAM_DIR"
+echo "==> Output dir        : $OUTPUT_DIR"
 
 # ---- 1..5. per-dependency build scripts ------------------------------------
 
@@ -220,17 +230,22 @@ done
 
 echo
 echo "############################################################"
-echo "# build: vendor blobs (Vendor/ -> Libraries/)"
+echo "# build: vendor blobs (Vendor/ -> Libraries/, Libraries-Steam/)"
 echo "############################################################"
-for blob in libEOSSDK-Linux-Shipping.so libsteam_api.so; do
+# libEOSSDK goes to the SE1 archive; libsteam_api ships in the Steam archive
+# next to Steamworks.NET.dll, its managed binding.
+for spec in "libEOSSDK-Linux-Shipping.so:$LIBRARIES_DIR" \
+            "libsteam_api.so:$LIBRARIES_STEAM_DIR"; do
+    blob="${spec%%:*}"
+    dest="${spec#*:}"
     src="$VENDOR_DIR/$blob"
     if [ ! -f "$src" ]; then
         echo "ERROR: missing vendor blob: $src" >&2
         echo "       These SDKs are proprietary and must stay committed under Vendor/." >&2
         exit 1
     fi
-    install -m 0755 "$src" "$LIBRARIES_DIR/$blob"
-    echo "  copied $blob"
+    install -m 0755 "$src" "$dest/$blob"
+    echo "  copied $blob -> ${dest##*/}/"
 done
 
 # ---- 8. SE2 vendor blobs (FMOD) ---------------------------------------------
@@ -263,12 +278,13 @@ done
 
 # ---- 9. Licenses ------------------------------------------------------------
 # SE1 archive: every top-level Licenses/*.txt. SE2 archive: the shared DXVK
-# licence plus the SE2-specific notices under Licenses/se2/ (kept in a
-# subdirectory precisely so the SE1 glob below does not pick them up).
+# licence plus the SE2-specific notices under Licenses/se2/. Steam archive:
+# the notices under Licenses/steam/. The subdirectories exist precisely so
+# the SE1 glob below does not pick their contents up.
 
 echo
 echo "############################################################"
-echo "# build: licenses (Licenses/ -> Libraries/LICENSES/)"
+echo "# build: licenses (Licenses/ -> Libraries*/LICENSES/)"
 echo "############################################################"
 shopt -s nullglob
 for f in "$LICENSES_SRC"/*.txt; do
@@ -281,6 +297,10 @@ echo "  copied DXVK-LICENSE.txt (SE2)"
 for f in "$LICENSES_SRC"/se2/*.txt; do
     install -m 0644 "$f" "$LIBRARIES_SE2_DIR/LICENSES/$(basename "$f")"
     echo "  copied $(basename "$f") (SE2)"
+done
+for f in "$LICENSES_SRC"/steam/*.txt; do
+    install -m 0644 "$f" "$LIBRARIES_STEAM_DIR/LICENSES/$(basename "$f")"
+    echo "  copied $(basename "$f") (Steam)"
 done
 shopt -u nullglob
 
@@ -304,9 +324,7 @@ EXPECTED_FILES=(
     # OpenAL
     libopenal.so
     # Vendor
-    libEOSSDK-Linux-Shipping.so libsteam_api.so
-    # Managed
-    Steamworks.NET.dll
+    libEOSSDK-Linux-Shipping.so
     # Licenses
     LICENSES/DXVK-LICENSE.txt
     LICENSES/EOS-NOTICE.txt
@@ -315,6 +333,12 @@ EXPECTED_FILES=(
     LICENSES/OpenAL-Soft-LGPL-2.0.txt
     LICENSES/OpenAL-Soft-NOTICES.txt
     LICENSES/OpenAL-Soft-README.txt
+    LICENSES/README.txt
+)
+
+EXPECTED_FILES_STEAM=(
+    Steamworks.NET.dll
+    libsteam_api.so
     LICENSES/README.txt
     LICENSES/Steam-NOTICE.txt
     LICENSES/Steamworks.NET-LICENSE.txt
@@ -351,6 +375,12 @@ for rel in "${EXPECTED_FILES_SE2[@]}"; do
         MISSING=1
     fi
 done
+for rel in "${EXPECTED_FILES_STEAM[@]}"; do
+    if [ ! -e "$LIBRARIES_STEAM_DIR/$rel" ]; then
+        echo "MISSING: $LIBRARIES_STEAM_DIR/$rel" >&2
+        MISSING=1
+    fi
+done
 if [ "$MISSING" = "1" ]; then
     if [ "$FILTERED" = "1" ]; then
         echo "Note: --only/--skip filters were active; partial staging is expected." >&2
@@ -366,6 +396,9 @@ echo "==> All expected artefacts present in $LIBRARIES_DIR"
 echo
 echo "==> All expected artefacts present in $LIBRARIES_SE2_DIR"
 ( cd "$LIBRARIES_SE2_DIR" && ls -lh | sed 's/^/  /' )
+echo
+echo "==> All expected artefacts present in $LIBRARIES_STEAM_DIR"
+( cd "$LIBRARIES_STEAM_DIR" && ls -lh | sed 's/^/  /' )
 
 # ---- 11. package ------------------------------------------------------------
 # Each archive mirrors its staging tree exactly: every library at the archive
@@ -409,9 +442,11 @@ mkdir -p "$OUTPUT_DIR"
 
 package_archive "$LIBRARIES_DIR" "$ARCHIVE_NAME"
 package_archive "$LIBRARIES_SE2_DIR" "$ARCHIVE_NAME_SE2"
+package_archive "$LIBRARIES_STEAM_DIR" "$ARCHIVE_NAME_STEAM"
 
 echo
 echo "############################################################"
 echo "# DONE  $(du -h "$OUTPUT_DIR/$ARCHIVE_NAME" | awk '{print $1}')  $OUTPUT_DIR/$ARCHIVE_NAME"
 echo "# DONE  $(du -h "$OUTPUT_DIR/$ARCHIVE_NAME_SE2" | awk '{print $1}')  $OUTPUT_DIR/$ARCHIVE_NAME_SE2"
+echo "# DONE  $(du -h "$OUTPUT_DIR/$ARCHIVE_NAME_STEAM" | awk '{print $1}')  $OUTPUT_DIR/$ARCHIVE_NAME_STEAM"
 echo "############################################################"

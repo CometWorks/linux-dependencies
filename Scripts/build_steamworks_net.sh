@@ -3,7 +3,8 @@
 #
 # Builds Steamworks.NET.dll from upstream sources at
 # https://github.com/rlabrecque/Steamworks.NET and installs it into the
-# build/Libraries staging folder.
+# build/Libraries-Steam staging folder, from which the steam-dependencies
+# archive is packaged (Steam bits ship separately from the SE1/SE2 archives).
 #
 # We pin to a specific commit SHA (not a tag) because rlabrecque tags
 # correspond to Steamworks SDK versions while the .dll Pulsar and Magnetar
@@ -18,7 +19,7 @@
 # Source layout (under the gitignored build/ folder of this repo):
 #
 #   build/
-#   ├── Libraries/                staging dir all dep scripts populate
+#   ├── Libraries-Steam/          Steam staging dir this script populates
 #   ├── Steamworks.NET/           clone of rlabrecque/Steamworks.NET (cached)
 #   └── steamworks-net.stamp      last-built commit SHA (cache key)
 #
@@ -33,7 +34,7 @@
 #                            Libraries/Steamworks.NET.dll's
 #                            AssemblyInformationalVersion)
 #   BUILD_DIR             = <repo>/build
-#   LIBRARIES_DIR         = $BUILD_DIR/Libraries
+#   LIBRARIES_STEAM_DIR   = $BUILD_DIR/Libraries-Steam
 #
 # Requirements: git, dotnet SDK (with net8.0 targeting pack).
 
@@ -47,7 +48,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR_DEFAULT="$REPO_DIR/build"
 
 BUILD_DIR="${BUILD_DIR:-$BUILD_DIR_DEFAULT}"
-LIBRARIES_DIR="${LIBRARIES_DIR:-$BUILD_DIR/Libraries}"
+LIBRARIES_STEAM_DIR="${LIBRARIES_STEAM_DIR:-$BUILD_DIR/Libraries-Steam}"
 
 CLONE_DIR="$BUILD_DIR/Steamworks.NET"
 CSPROJ="$CLONE_DIR/Standalone3.0/Steamworks.NET.csproj"
@@ -72,17 +73,17 @@ for tool in git dotnet; do
     }
 done
 
-mkdir -p "$BUILD_DIR" "$LIBRARIES_DIR"
+mkdir -p "$BUILD_DIR" "$LIBRARIES_STEAM_DIR"
 
 # ---- cache check ------------------------------------------------------------
 
 if [ "$CLEAN" = "1" ]; then
     rm -rf "$CLONE_DIR/Standalone3.0/bin" "$CLONE_DIR/Standalone3.0/obj"
-elif [ -f "$LIBRARIES_DIR/$DLL_NAME" ] \
+elif [ -f "$LIBRARIES_STEAM_DIR/$DLL_NAME" ] \
    && [ -f "$STAMP_FILE" ] \
    && [ "$(cat "$STAMP_FILE")" = "$STEAMWORKS_NET_COMMIT" ]; then
     echo "==> Cached build matches commit $STEAMWORKS_NET_COMMIT; skipping rebuild"
-    echo "==> $DLL_NAME already in $LIBRARIES_DIR"
+    echo "==> $DLL_NAME already in $LIBRARIES_STEAM_DIR"
     exit 0
 fi
 
@@ -136,11 +137,11 @@ if [ -z "$DLL_SRC" ]; then
     exit 1
 fi
 
-echo "==> Staging $DLL_NAME into $LIBRARIES_DIR"
-install -m 0644 "$DLL_SRC" "$LIBRARIES_DIR/$DLL_NAME"
+echo "==> Staging $DLL_NAME into $LIBRARIES_STEAM_DIR"
+install -m 0644 "$DLL_SRC" "$LIBRARIES_STEAM_DIR/$DLL_NAME"
 
 printf '%s\n' "$STEAMWORKS_NET_COMMIT" > "$STAMP_FILE"
 
 echo
-echo "==> Staged $DLL_NAME into $LIBRARIES_DIR:"
-ls -l "$LIBRARIES_DIR/$DLL_NAME"
+echo "==> Staged $DLL_NAME into $LIBRARIES_STEAM_DIR:"
+ls -l "$LIBRARIES_STEAM_DIR/$DLL_NAME"

@@ -6,28 +6,24 @@ staging folder, so its layout is an API: changing it breaks them.
 
 ## Assets
 
-Each release carries two assets:
+Each release carries three assets:
 
 ```
-linux-dependencies.tar.gz       Space Engineers 1 (Pulsar for Linux, Magnetar)
-linux-dependencies-se2.tar.gz   Space Engineers 2 (the SE2 Linux port)
+se1-dependencies.tar.gz     Space Engineers 1 (Pulsar for Linux, Magnetar)
+se2-dependencies.tar.gz     Space Engineers 2 (the SE2 Linux port)
+steam-dependencies.tar.gz   Steamworks.NET.dll + libsteam_api.so, consumed
+                            alongside either game archive
 ```
 
-Both are gzip-compressed tars built by `build.sh` (roughly 24 MB and 7 MB).
-The SE1 archive contains exactly the same library set as before the SE2
-split; its patched DXVK binaries are **byte-identical to the SE2 archive's
-copies** — built once, copied into both staging trees.
+All are gzip-compressed tars built by `build.sh` (roughly 24 MB, 7 MB and
+250 kB). The patched DXVK binaries are **byte-identical across the two game
+archives** — built once, copied into both staging trees.
 
-Download the latest with:
+Download the latest with (same pattern for the other two assets):
 
 ```bash
-curl -fL -o linux-dependencies.tar.gz \
-  https://github.com/CometWorks/linux-dependencies/releases/latest/download/linux-dependencies.tar.gz
-```
-
-```bash
-curl -fL -o linux-dependencies-se2.tar.gz \
-  https://github.com/CometWorks/linux-dependencies/releases/latest/download/linux-dependencies-se2.tar.gz
+curl -fL -o se1-dependencies.tar.gz \
+  https://github.com/CometWorks/linux-dependencies/releases/latest/download/se1-dependencies.tar.gz
 ```
 
 ## Layout (SE1 archive)
@@ -36,7 +32,7 @@ Every library sits at the archive root as a **single real file under its
 bare, unversioned name** — no symlinks, no version-suffixed filenames.
 Licence texts sit in a single `LICENSES/` subdirectory. There is no
 top-level wrapper directory, so
-`tar -xzf linux-dependencies.tar.gz -C <staging dir>` is the whole staging
+`tar -xzf se1-dependencies.tar.gz -C <staging dir>` is the whole staging
 step.
 
 ```
@@ -48,8 +44,6 @@ libswscale.so
 libdxvk_d3d11.so              (patched, see Patches/dxvk/)
 libdxvk_dxgi.so               (patched)
 libEOSSDK-Linux-Shipping.so
-libsteam_api.so
-Steamworks.NET.dll
 LICENSES/DXVK-LICENSE.txt
 LICENSES/EOS-NOTICE.txt
 LICENSES/FFmpeg-LGPL-2.1.txt
@@ -58,8 +52,6 @@ LICENSES/OpenAL-Soft-LGPL-2.0.txt
 LICENSES/OpenAL-Soft-NOTICES.txt
 LICENSES/OpenAL-Soft-README.txt
 LICENSES/README.txt
-LICENSES/Steam-NOTICE.txt
-LICENSES/Steamworks.NET-LICENSE.txt
 ```
 
 ### Guarantees
@@ -120,6 +112,23 @@ in the SE1 archive. The SE2 native wrappers (`libVRage.*.Native.so`) are
 `build.sh` asserts the corresponding `EXPECTED_FILES_SE2` array before
 packaging, same as the SE1 list.
 
+## Layout (Steam archive)
+
+Same conventions. Consumed alongside either game archive by any bundle that
+integrates with Steam; the two files belong together (the managed binding
+and the native runtime it P/Invokes).
+
+```
+Steamworks.NET.dll
+libsteam_api.so
+LICENSES/README.txt
+LICENSES/Steam-NOTICE.txt
+LICENSES/Steamworks.NET-LICENSE.txt
+```
+
+`build.sh` asserts the corresponding `EXPECTED_FILES_STEAM` array before
+packaging.
+
 ## Which files each consumer needs
 
 The SE1 archive is shared, so each SE1 consumer extracts all of it and uses
@@ -132,17 +141,16 @@ maintained forever.
 | FFmpeg libraries | yes | no |
 | DXVK libraries | yes | no |
 | OpenAL library | yes | no |
-| `Steamworks.NET.dll` | yes | yes |
-| `libsteam_api.so` | yes | yes |
 | `libEOSSDK-Linux-Shipping.so` | yes | yes |
 | `LICENSES/` | yes | the subset covering what it ships |
+| Steam archive (`Steamworks.NET.dll` + `libsteam_api.so`) | yes | yes |
 
 The SE2 archive is consumed only by the Space Engineers 2 Linux port, which
-takes all of it. The two archives are kept separate — rather than a `se2/`
-subdirectory inside the SE1 archive — so SE1 consumers never download or
-ship SE2-only payload (vkd3d-proton, FMOD) and the SE1 archive's library
-set stays exactly what it was before the split; the DXVK files it shares
-with the SE2 archive are the same bytes in both.
+takes all of it (plus the Steam archive). The archives are kept separate —
+rather than subdirectories of one archive — so consumers never download or
+ship payload they cannot use, and a Steamworks update republishes neither
+game payload; the DXVK files shared between the game archives are the same
+bytes in both.
 
 ## Versioning and tags
 

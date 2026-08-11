@@ -2,13 +2,15 @@
 
 Both [Pulsar for Linux](https://github.com/CometWorks/Pulsar) (`linux` branch)
 and [Magnetar](https://github.com/CometWorks/magnetar) fetch the SE1 release
-archive (`linux-dependencies.tar.gz`) at build time instead of building these
-dependencies themselves. The SE2 archive (`linux-dependencies-se2.tar.gz`) is
-for the Space Engineers 2 Linux port — see
-[the SE2 archive](#the-se2-archive) below.
+archive (`se1-dependencies.tar.gz`) **and** the Steam archive
+(`steam-dependencies.tar.gz`, carrying `Steamworks.NET.dll` +
+`libsteam_api.so`) at build time instead of building these dependencies
+themselves. The SE2 archive (`se2-dependencies.tar.gz`) is for the Space
+Engineers 2 Linux port — see [the SE2 archive](#the-se2-archive) below.
 
 Each consumer has a `Scripts/fetch_linux_dependencies.sh` that resolves a
-release and downloads `linux-dependencies.tar.gz`. The two copies are
+release and downloads the assets it needs (both game-relevant archives come
+from the same release, so one tag pin covers them). The two copies are
 deliberately near-identical, and they mirror the existing
 `fetch_native_wrappers.sh` in both repos so there is one fetch pattern to
 understand rather than two.
@@ -59,21 +61,22 @@ LINUX_DEPENDENCIES_TAG=v1.0.7 ./build.sh
 
 ## Pulsar for Linux
 
-`Scripts/build_dependencies.sh` orchestrates two fetches and nothing else:
+`Scripts/build_dependencies.sh` orchestrates the fetches and nothing else:
 
 ```
-Scripts/fetch_linux_dependencies.sh   -> FFmpeg, DXVK, OpenAL, Steamworks.NET,
-                                         EOS + Steam blobs, LICENSES/
+Scripts/fetch_linux_dependencies.sh   -> se1-dependencies.tar.gz (FFmpeg,
+                                         DXVK, OpenAL, EOS, LICENSES/) +
+                                         steam-dependencies.tar.gz
+                                         (Steamworks.NET.dll, libsteam_api.so)
 Scripts/fetch_native_wrappers.sh      -> libD3DCompiler.so, libHavok.so,
                                          libRecastDetour.so, libVRageNative.so
 ```
 
-Both land directly in `build/Libraries/`, and the script's final assertion —
-the full expected-file list, unchanged from before this split — confirms the
-combined result. `Legacy/Legacy.csproj` copies that folder next to the apphost
-in its `AfterBuild` and `AfterPublish` targets, and `Shared/Shared.csproj`
-references `build/Libraries/Steamworks.NET.dll`; neither needed any change,
-because `build/Libraries/` still ends up with exactly the same contents.
+Everything lands directly in `build/Libraries/`, and the script's final
+assertion — the full expected-file list — confirms the combined result.
+`Legacy/Legacy.csproj` copies that folder next to the apphost in its
+`AfterBuild` and `AfterPublish` targets, and `Shared/Shared.csproj`
+references `build/Libraries/Steamworks.NET.dll`.
 
 Pulsar's own `Scripts/build_ffmpeg.sh`, `build_dxvk.sh` and
 `build_steamworks_net.sh` are gone, along with its `Vendor/` directory and
@@ -82,10 +85,12 @@ compiling FFmpeg and DXVK.
 
 ## Magnetar
 
-Magnetar is headless, so it takes `Steamworks.NET.dll` and the two proprietary
-runtimes but not FFmpeg, DXVK or OpenAL — those stay unused in
-`build/linux-deps/` and never reach the bundle. Its `build.sh` fetches both
-releases and then stages only the files it wants into `build/Libraries/`.
+Magnetar is headless, so from the SE1 archive it takes only
+`libEOSSDK-Linux-Shipping.so` — FFmpeg, DXVK and OpenAL stay unused in
+`build/linux-deps/` and never reach the bundle — and it takes the whole
+Steam archive (`Steamworks.NET.dll` + `libsteam_api.so`). Its `build.sh`
+fetches the releases and then stages only the files it wants into
+`build/Libraries/`.
 
 That applies to the licence texts too. Copying `LICENSES/` wholesale would put
 FFmpeg, DXVK and OpenAL attribution into a bundle containing none of those
@@ -116,7 +121,7 @@ exactly which path each file came from.
 
 ## The SE2 archive
 
-The Space Engineers 2 Linux port consumes `linux-dependencies-se2.tar.gz`,
+The Space Engineers 2 Linux port consumes `se2-dependencies.tar.gz`,
 which carries the patched DXVK build (byte-identical to the SE1 archive's
 copy), the patched vkd3d-proton build, and the FMOD Engine runtime — see
 [release-archive.md](release-archive.md#layout-se2-archive) for the exact

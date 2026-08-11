@@ -20,6 +20,6 @@ Files in this directory:
                                   (proprietary, Firelight Technologies)
     FMOD-NOTICE.txt               FMOD attribution notice
 
-This is the SE2 companion archive (linux-dependencies-se2.tar.gz). The
+This is the SE2 companion archive (se2-dependencies.tar.gz). The
 Space Engineers 1 libraries and their licences ship separately in
-linux-dependencies.tar.gz; the patched DXVK binaries are identical in both.
+se1-dependencies.tar.gz; the patched DXVK binaries are identical in both.

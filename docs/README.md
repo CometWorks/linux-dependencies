@@ -22,7 +22,8 @@ Linux](https://github.com/CometWorks/Pulsar) and
 ./build.sh
 ```
 
-That builds everything from source once, stages `build/Libraries/` (SE1) and
-`build/Libraries-SE2/` (SE2), and packages `dist/linux-dependencies.tar.gz`
-and `dist/linux-dependencies-se2.tar.gz`. See [building.md](building.md) for
+That builds everything from source once, stages `build/Libraries/` (SE1),
+`build/Libraries-SE2/` (SE2) and `build/Libraries-Steam/` (Steam), and
+packages `dist/se1-dependencies.tar.gz`, `dist/se2-dependencies.tar.gz` and
+`dist/steam-dependencies.tar.gz`. See [building.md](building.md) for
 prerequisites and options.

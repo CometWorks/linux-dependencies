@@ -40,11 +40,11 @@ for.
 ./build.sh
 ```
 
-Builds every dependency once, stages `build/Libraries/` (SE1) and
-`build/Libraries-SE2/` (SE2), verifies both staged trees, and packages
-`dist/linux-dependencies.tar.gz` and `dist/linux-dependencies-se2.tar.gz`.
-The patched DXVK and vkd3d-proton binaries are copied into the SE2 tree
-rather than rebuilt.
+Builds every dependency once, stages `build/Libraries/` (SE1),
+`build/Libraries-SE2/` (SE2) and `build/Libraries-Steam/` (Steam), verifies
+the staged trees, and packages `dist/se1-dependencies.tar.gz`,
+`dist/se2-dependencies.tar.gz` and `dist/steam-dependencies.tar.gz`. The
+patched DXVK binaries are copied into the SE2 tree rather than rebuilt.
 
 A cold first run takes roughly 10–20 minutes, dominated by FFmpeg and DXVK.
 Subsequent runs are near-instant when nothing changed — see
@@ -75,6 +75,7 @@ packaging is skipped.
 | `BUILD_DIR` | `$REPO_DIR/build` |
 | `LIBRARIES_DIR` | `$BUILD_DIR/Libraries` |
 | `LIBRARIES_SE2_DIR` | `$BUILD_DIR/Libraries-SE2` |
+| `LIBRARIES_STEAM_DIR` | `$BUILD_DIR/Libraries-Steam` |
 | `OUTPUT_DIR` | `$REPO_DIR/dist` |
 | `VENDOR_DIR` | `$REPO_DIR/Vendor` |
 | `LICENSES_SRC` | `$REPO_DIR/Licenses` |
@@ -93,7 +94,8 @@ The scripts under `Scripts/` are standalone and can be run directly:
 ```
 
 They stage into the same `build/Libraries/` folder (`build_vkd3d_proton.sh`
-into `build/Libraries-SE2/`, since it ships in the SE2 archive only). This is
+into `build/Libraries-SE2/` and `build_steamworks_net.sh` into
+`build/Libraries-Steam/`, matching the archive each ships in). This is
 usually the fastest way to iterate on one dependency.
 
 ## Caching
@@ -129,10 +131,12 @@ rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball
 After a successful run:
 
 ```
-build/Libraries/                       staged SE1 tree (what the SE1 archive mirrors)
-build/Libraries-SE2/                   staged SE2 tree
-dist/linux-dependencies.tar.gz         the SE1 release archive
-dist/linux-dependencies-se2.tar.gz     the SE2 release archive
+build/Libraries/                 staged SE1 tree (what the SE1 archive mirrors)
+build/Libraries-SE2/             staged SE2 tree
+build/Libraries-Steam/           staged Steam tree
+dist/se1-dependencies.tar.gz     the SE1 release archive
+dist/se2-dependencies.tar.gz     the SE2 release archive
+dist/steam-dependencies.tar.gz   the Steam release archive
 ```
 
 All of it is gitignored. See [release-archive.md](release-archive.md) for the

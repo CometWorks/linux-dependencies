@@ -19,9 +19,6 @@ Files in this directory:
                                portions of OpenAL Soft under those terms
     EOS-NOTICE.txt             Attribution for libEOSSDK-Linux-Shipping.so
                                (proprietary, Epic Games)
-    Steam-NOTICE.txt           Attribution for libsteam_api.so
-                               (proprietary, Valve Corporation)
-    Steamworks.NET-LICENSE.txt MIT licence covering Steamworks.NET.dll
 
 The native wrapper libraries (libD3DCompiler.so, libHavok.so,
 libRecastDetour.so, libVRageNative.so) are MIT-licensed and are NOT part of
@@ -29,6 +26,7 @@ this archive; they are published separately by the
 CometWorks/linux-native-wrappers repository, which ships its own licence
 text.
 
-The Space Engineers 2 companion archive (linux-dependencies-se2.tar.gz)
-carries its own LICENSES directory, sourced from the se2/ subdirectory of
-the repository's Licenses/ folder; none of those notices ship here.
+The Space Engineers 2 companion archive (se2-dependencies.tar.gz) and the
+Steam companion archive (steam-dependencies.tar.gz) carry their own LICENSES
+directories, sourced from the se2/ and steam/ subdirectories of the
+repository's Licenses/ folder; none of those notices ship here.
