@@ -1,0 +1,13 @@
+diff --git a/libs/vkd3d/device.c b/libs/vkd3d/device.c
+index f6db6954..a63c7cad 100644
+--- a/libs/vkd3d/device.c
++++ b/libs/vkd3d/device.c
+@@ -10146,7 +10146,7 @@ static void d3d12_device_caps_init_feature_options(struct d3d12_device *device)
+ 
+     /* FP64 must preserve denorms (oof). */
+     options->DoublePrecisionFloatShaderOps = features->shaderFloat64 &&
+-            supports_denorm_fp64 &&
++            (supports_denorm_fp64 || getenv("SE2_CPU_RENDERING")) &&
+             device->device_info.vulkan_1_2_properties.denormBehaviorIndependence != VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
+ 
+     options->OutputMergerLogicOp = features->logicOp;

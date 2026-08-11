@@ -1,9 +1,9 @@
 # Vendor blobs
 
-This directory contains the **proprietary** native libraries that this repo
+This directory contains the binary-only native libraries that this repo
 ships inside its release archives. The blobs at this level go into the SE1
-archive; the FMOD runtime for the SE2 archive lives in
-[se2/](se2/README.md) on the same terms. They are committed here instead of being
+archive; the SE2 archive's blobs (the FMOD runtime and the SE2 native
+wrappers) live in [se2/](se2/README.md) on the same terms. They are committed here instead of being
 downloaded by the build pipeline because their distribution requires
 accepting per-vendor agreements that the maintainer has signed once, and the
 upstream download endpoints are gated behind logged-in partner portals (no

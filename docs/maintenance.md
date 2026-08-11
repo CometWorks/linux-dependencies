@@ -40,13 +40,12 @@ to need editing regardless.
 ## Bumping DXVK
 
 1. Set `DXVK_VERSION` in `Scripts/build_dxvk.sh` to the new tag (without the
-   leading `v`; the script adds it). Both variants (SE1 and SE2) build from
-   the same pin.
-2. Build. The stamp files invalidate automatically.
-3. **Rebase the SE2 patch series.** If any patch under `Patches/dxvk/` no
-   longer applies, the SE2 build fails naming the patch. Regenerate the series
-   against the new tag (apply on a scratch clone, resolve, re-export with
-   `git diff` / `git format-patch`) and update the provenance table in
+   leading `v`; the script adds it).
+2. Build. The stamp file invalidates automatically.
+3. **Rebase the patch series.** If any patch under `Patches/dxvk/` no longer
+   applies, the build fails naming the patch. Regenerate the series against
+   the new tag (apply on a scratch clone, resolve, re-export with `git diff`
+   / `git format-patch`) and update the provenance table in
    `Patches/dxvk/README.md`.
 4. If upstream ever renames `package-native.sh` or changes its arguments, the
    build fails at that call — adjust the invocation rather than
@@ -55,13 +54,23 @@ to need editing regardless.
    `libvulkan-dev` on the runner and a newer Vulkan driver on users' machines;
    check upstream's release notes before bumping across a major version.
 
-## Changing the SE2 DXVK patch series
+## Bumping vkd3d-proton
 
-Add, edit or remove `Patches/dxvk/NNNN-*.patch` files; the series hash is
-part of `build/dxvk-se2.stamp`, so the next build rebuilds the SE2 variant
-automatically (the SE1 variant is untouched by definition). For every patch,
-record in `Patches/dxvk/README.md` what it fixes and where it came from.
-Patches are applied with `git apply` in byte-wise filename order.
+Same shape as DXVK: set `VKD3D_PROTON_COMMIT` in
+`Scripts/build_vkd3d_proton.sh` (a full 40-character SHA), build, rebase
+`Patches/vkd3d-proton/` if a patch stops applying, and update its README's
+provenance notes. The current pin is the upstream state the SE2 port's patch
+series was developed against, so treat a bump as requiring an SE2 smoke test.
+
+## Changing a patch series
+
+Add, edit or remove `Patches/<dep>/NNNN-*.patch` files; each series' hash is
+part of its dependency's cache stamp, so the next build rebuilds that
+dependency automatically. Patched libraries ship **in both archives** (built
+once, copied), so a patch change affects SE1 and SE2 consumers alike — test
+accordingly. For every patch, record in the series' README.md what it fixes
+and where it came from. Patches are applied with `git apply` in byte-wise
+filename order.
 
 ## Bumping SDL3
 
@@ -119,25 +128,32 @@ manually maintained.
 Redistribution here relies on agreements the maintainers have accepted; see
 [Vendor/README.md](../Vendor/README.md).
 
-## Updating the FMOD blobs (SE2)
+## Updating the SE2 vendor blobs
 
-`Vendor/se2/libfmod.so` and `Vendor/se2/libfmodstudio.so` are proprietary and
-manually maintained, like the blobs above — but version-locked to the game:
-the FMOD wrapper inside Space Engineers 2 is generated for the FMOD version
-the game ships, so the blobs must match it at least to the minor release.
+`Vendor/se2/` holds the FMOD runtime and the SE2 native wrappers; all are
+manually maintained blobs.
+
+**FMOD** (`libfmod.so.14`, `libfmodstudio.so.14`) is version-locked to the
+game: the FMOD wrapper inside Space Engineers 2 is generated for the FMOD
+version the game ships, so the blobs must match it at least to the minor
+release.
 
 1. Find the game's FMOD version:
    `strings -el "<SE2 game dir>/fmod.dll" | grep -A1 FileVersion`
 2. Download that FMOD Engine version for Linux from
    <https://www.fmod.com/download> (login required).
-3. Copy the two x86_64 release-variant runtimes under the bare names —
-   the exact paths and rules are in [Vendor/se2/README.md](../Vendor/se2/README.md).
-4. Commit and push. `build.sh` re-derives the SONAME alias symlinks from the
-   new blobs, so no script change is needed.
+3. Copy the two x86_64 release-variant runtimes under their SONAME file
+   names — the exact paths and rules are in
+   [Vendor/se2/README.md](../Vendor/se2/README.md). If the SONAME digit
+   changed (a new FMOD major/minor), update `SE2_BLOBS` in `build.sh`,
+   `EXPECTED_FILES_SE2`, and the file list in `release-archive.md` together.
+4. Commit and push.
 
-While these blobs are absent, `build.sh` skips the SE2 archive with a warning
-instead of failing — committing them for the first time is what activates the
-SE2 release asset.
+**The wrappers** (`libVRage.*.Native.so`) are builds of the
+`linux-native-wrappers` sister repository; replace them when that repo's SE2
+support changes, and record the source commits in `Vendor/se2/README.md`.
+When the wrappers repo starts publishing SE2 releases, switch consumers to
+that release and retire these blobs.
 
 ## Changing the archive layout
 

@@ -7,14 +7,22 @@ when redistributing them as part of a Space Engineers 2 Linux bundle.
 
 Files in this directory:
 
-    DXVK-LICENSE.txt           zlib licence covering libdxvk_*.so* (built
-                               from upstream DXVK plus the patch series
-                               published under Patches/dxvk/ in the
-                               CometWorks/linux-dependencies repository)
-    FMOD-NOTICE.txt            Attribution for libfmod.so and
-                               libfmodstudio.so (proprietary, Firelight
-                               Technologies)
+    DXVK-LICENSE.txt              zlib licence covering libdxvk_*.so* (built
+                                  from upstream DXVK plus the patch series
+                                  published under Patches/dxvk/ in the
+                                  CometWorks/linux-dependencies repository)
+    VKD3D-LGPL-2.1.txt            LGPL-2.1 text covering
+                                  libvkd3d-proton-d3d12*.so
+    vkd3d-proton-README.txt       Build provenance + LGPL relinking notes
+                                  (patch series under Patches/vkd3d-proton/)
+    FMOD-EULA.txt                 FMOD End User License Agreement covering
+                                  libfmod.so.14 and libfmodstudio.so.14
+                                  (proprietary, Firelight Technologies)
+    FMOD-NOTICE.txt               FMOD attribution notice
+    linux-native-wrappers-MIT.txt MIT licence covering the
+                                  libVRage.*.Native.so wrapper libraries
 
 This is the SE2 companion archive (linux-dependencies-se2.tar.gz). The
 Space Engineers 1 libraries and their licences ship separately in
-linux-dependencies.tar.gz.
+linux-dependencies.tar.gz; the patched DXVK and vkd3d-proton binaries are
+identical in both.

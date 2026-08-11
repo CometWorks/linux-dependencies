@@ -28,31 +28,38 @@ for the PE-loader shims.
 
 ### In scope — built or shipped here
 
-| Artefact | Archive | Origin |
+| Artefact | Archives | Origin |
 | --- | --- | --- |
 | `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | SE1 | FFmpeg 8.1, built from the upstream release tarball |
-| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | SE1 | DXVK Native 2.7.1, built from the upstream git tag |
-| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` (patched) | SE2 | Same tag with the `Patches/dxvk/` series applied |
+| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 2.7.1 + the `Patches/dxvk/` series, built once from the upstream git tag |
+| `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | both | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series, built once |
 | `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
 | `Steamworks.NET.dll` | SE1 | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
 | `libsteam_api.so` | SE1 | Proprietary Valve blob, committed under `Vendor/` |
-| `libfmod.so`, `libfmodstudio.so` | SE2 | Proprietary Firelight blobs, committed under `Vendor/se2/` |
+| `libfmod.so.14`, `libfmodstudio.so.14` | SE2 | Proprietary Firelight blobs, committed under `Vendor/se2/` |
+| `libVRage.*.Native.so` (4 wrappers) | SE2 | MIT blobs built from linux-native-wrappers, committed under `Vendor/se2/` |
 | `LICENSES/*.txt` | both | Third-party licence texts and attribution, committed under `Licenses/` |
 
-The SE2 archive exists because the Space Engineers 2 client needs two things
-SE1 does not: source-level DXVK fixes (which must not perturb the pristine
-build SE1 consumers ship) and the FMOD Engine runtime the game's audio is
-built on. It is a **separate release asset** rather than a subdirectory of the
-SE1 archive, so SE1 consumers never download or ship SE2 payload and the SE1
-contract is untouched by SE2 churn.
+Two policies shape the archive split:
+
+* **Patched libraries appear in both archives, built once.** DXVK and
+  vkd3d-proton carry source-level fixes (see `Patches/`); the same binaries
+  ship to SE1 and SE2 so there is exactly one build to test and no variant
+  drift.
+* **SE2-only payload stays out of the SE1 archive.** FMOD and the SE2
+  wrappers ship only in `linux-dependencies-se2.tar.gz`, so SE1 consumers
+  never download or ship libraries they cannot use.
 
 ### Out of scope — deliberately not here
 
-**The native wrapper libraries** (`libD3DCompiler.so`, `libHavok.so`,
+**The SE1 native wrapper libraries** (`libD3DCompiler.so`, `libHavok.so`,
 `libRecastDetour.so`, `libVRageNative.so`) are built and released by
 [CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
-Consumers fetch that release directly, in addition to this one.
+Consumers fetch that release directly, in addition to this one. (The SE2
+wrappers under `Vendor/se2/` are a temporary exception: the wrappers repo
+does not publish SE2 builds yet, so tested blobs are committed here until it
+does.)
 
 They are kept separate on purpose. The wrappers change far more often than
 FFmpeg or DXVK do, and re-bundling them here would mean every wrapper fix

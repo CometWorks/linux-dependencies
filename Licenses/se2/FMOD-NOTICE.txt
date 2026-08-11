@@ -3,17 +3,17 @@ FMOD Engine
 
 The shared libraries shipped alongside this notice as:
 
-    libfmod.so         (FMOD Core API runtime)
-    libfmodstudio.so   (FMOD Studio API runtime)
+    libfmod.so.14         (FMOD Core API runtime)
+    libfmodstudio.so.14   (FMOD Studio API runtime)
 
 are the FMOD Engine runtime, distributed by Firelight Technologies Pty Ltd.
 
 License
 -------
 Proprietary. Use and redistribution of the FMOD Engine is governed by the
-FMOD End User License Agreement, which permits redistribution of the
-unmodified runtime libraries as part of a product. The full agreement is
-available at:
+FMOD End User License Agreement (shipped next to this notice as
+FMOD-EULA.txt), which permits redistribution of the unmodified runtime
+libraries as part of a product. See also:
 
     https://www.fmod.com/legal
 

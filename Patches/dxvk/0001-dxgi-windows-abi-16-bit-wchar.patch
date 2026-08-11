@@ -1,0 +1,109 @@
+diff --git a/include/native/windows/windows_base.h b/include/native/windows/windows_base.h
+index f008a53..2b9195d 100644
+--- a/include/native/windows/windows_base.h
++++ b/include/native/windows/windows_base.h
+@@ -27,7 +27,10 @@ typedef int32_t *LPLONG;
+ 
+ typedef int32_t HRESULT;
+ 
+-typedef wchar_t WCHAR;
++// Windows ABI: WCHAR is a 16-bit type. Managed interop layers (Vortice,
++// SharpDX) marshal WCHAR fields and strings with the Windows ABI, so the
++// native build must not substitute the 32-bit Linux wchar_t here.
++typedef uint16_t WCHAR;
+ typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
+ typedef unsigned char UCHAR, *PUCHAR;
+ 
+@@ -131,9 +134,9 @@ typedef UINT_PTR* PUINT_PTR;
+ #endif /*STRICT*/
+ 
+ typedef char* LPSTR;
+-typedef wchar_t* LPWSTR;
++typedef WCHAR* LPWSTR;
+ typedef const char* LPCSTR;
+-typedef const wchar_t* LPCWSTR;
++typedef const WCHAR* LPCWSTR;
+ 
+ typedef struct LUID {
+   DWORD LowPart;
+diff --git a/src/dxgi/dxgi_adapter.cpp b/src/dxgi/dxgi_adapter.cpp
+index c9160dc..47c93c8 100644
+--- a/src/dxgi/dxgi_adapter.cpp
++++ b/src/dxgi/dxgi_adapter.cpp
+@@ -17,6 +17,13 @@
+ 
+ namespace dxvk {
+ 
++  // The adapter descriptions are copied into caller-provided buffers, and
++  // managed callers allocate them with the Windows x64 layout (16-bit
++  // WCHAR). A size drift here corrupts the caller's memory silently.
++  static_assert(sizeof(DXGI_ADAPTER_DESC)  == 304);
++  static_assert(sizeof(DXGI_ADAPTER_DESC1) == 312);
++  static_assert(sizeof(DXGI_ADAPTER_DESC3) == 320);
++
+   DxgiVkAdapter::DxgiVkAdapter(DxgiAdapter* pAdapter)
+   : m_adapter(pAdapter) {
+ 
+diff --git a/src/dxgi/dxgi_output.cpp b/src/dxgi/dxgi_output.cpp
+index 8814f5c..a57e809 100644
+--- a/src/dxgi/dxgi_output.cpp
++++ b/src/dxgi/dxgi_output.cpp
+@@ -20,6 +20,10 @@
+ 
+ namespace dxvk {
+ 
++  // See the matching asserts in dxgi_adapter.cpp: the output description is
++  // copied into a caller-provided buffer with the Windows x64 layout.
++  static_assert(sizeof(DXGI_OUTPUT_DESC) == 96);
++
+   DxgiOutput::DxgiOutput(
+     const Com<DxgiFactory>& factory,
+     const Com<DxgiAdapter>& adapter,
+diff --git a/src/wsi/sdl2/wsi_monitor_sdl2.cpp b/src/wsi/sdl2/wsi_monitor_sdl2.cpp
+index d021346..8fbb696 100644
+--- a/src/wsi/sdl2/wsi_monitor_sdl2.cpp
++++ b/src/wsi/sdl2/wsi_monitor_sdl2.cpp
+@@ -37,13 +37,14 @@ namespace dxvk::wsi {
+     if (!isDisplayValid(displayId))
+       return false;
+ 
+-    std::wstringstream nameStream;
+-    nameStream << LR"(\\.\DISPLAY)" << (displayId + 1);
+-
+-    std::wstring name = nameStream.str();
++    // WCHAR is a 16-bit type on the native build, so the display name is
++    // assembled as UTF-8 and transcoded into the Windows-ABI buffer.
++    std::string name = str::format(R"(\\.\DISPLAY)", displayId + 1);
+ 
+     std::memset(Name, 0, sizeof(Name));
+-    name.copy(Name, name.length(), 0);
++    str::transcodeString(Name,
++      sizeof(Name) / sizeof(Name[0]) - 1,
++      name.c_str(), name.size());
+ 
+     return true;
+   }
+diff --git a/src/wsi/sdl3/wsi_monitor_sdl3.cpp b/src/wsi/sdl3/wsi_monitor_sdl3.cpp
+index f568847..03f1306 100644
+--- a/src/wsi/sdl3/wsi_monitor_sdl3.cpp
++++ b/src/wsi/sdl3/wsi_monitor_sdl3.cpp
+@@ -46,13 +46,14 @@ namespace dxvk::wsi {
+     if (!displayId)
+       return false;
+ 
+-    std::wstringstream nameStream;
+-    nameStream << LR"(\\.\DISPLAY)" << displayId;
+-
+-    std::wstring name = nameStream.str();
++    // WCHAR is a 16-bit type on the native build, so the display name is
++    // assembled as UTF-8 and transcoded into the Windows-ABI buffer.
++    std::string name = str::format(R"(\\.\DISPLAY)", displayId);
+ 
+     std::memset(Name, 0, sizeof(Name));
+-    name.copy(Name, name.length(), 0);
++    str::transcodeString(Name,
++      sizeof(Name) / sizeof(Name[0]) - 1,
++      name.c_str(), name.size());
+ 
+     return true;
+   }

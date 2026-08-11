@@ -10,14 +10,12 @@ Each release carries two assets:
 
 ```
 linux-dependencies.tar.gz       Space Engineers 1 (Pulsar for Linux, Magnetar)
-linux-dependencies-se2.tar.gz   Space Engineers 2 (patched DXVK + FMOD)
+linux-dependencies-se2.tar.gz   Space Engineers 2 (the SE2 Linux port)
 ```
 
-The SE1 archive is roughly 24 MB, gzip-compressed tar, built by `build.sh`.
-The SE2 archive is smaller and is present only once the FMOD vendor blobs are
-committed under `Vendor/se2/` — until then `build.sh` skips it with a warning
-and the release carries the SE1 asset alone (see
-[Vendor/se2/README.md](../Vendor/se2/README.md)).
+Both are gzip-compressed tars built by `build.sh` (roughly 27 MB and 7 MB).
+The patched DXVK and vkd3d-proton binaries are **byte-identical across the
+two archives** — they are built once and copied into both staging trees.
 
 Download the latest with:
 
@@ -54,10 +52,12 @@ libswresample.so.6.3.100
 libswscale.so                 -> libswscale.so.9.5.100       (symlink)
 libswscale.so.9               -> libswscale.so.9.5.100       (symlink)
 libswscale.so.9.5.100
-libdxvk_d3d11.so
-libdxvk_d3d11.so.0            -> libdxvk_d3d11.so            (symlink)
-libdxvk_dxgi.so
-libdxvk_dxgi.so.0             -> libdxvk_dxgi.so             (symlink)
+libdxvk_d3d11.so                                      (patched, see Patches/dxvk/)
+libdxvk_d3d11.so.0            -> libdxvk_d3d11.so     (symlink)
+libdxvk_dxgi.so                                       (patched)
+libdxvk_dxgi.so.0             -> libdxvk_dxgi.so      (symlink)
+libvkd3d-proton-d3d12.so                              (patched, see Patches/vkd3d-proton/)
+libvkd3d-proton-d3d12core.so                          (patched)
 libEOSSDK-Linux-Shipping.so
 libsteam_api.so
 Steamworks.NET.dll
@@ -71,6 +71,8 @@ LICENSES/OpenAL-Soft-README.txt
 LICENSES/README.txt
 LICENSES/Steam-NOTICE.txt
 LICENSES/Steamworks.NET-LICENSE.txt
+LICENSES/VKD3D-LGPL-2.1.txt
+LICENSES/vkd3d-proton-README.txt
 ```
 
 ### Guarantees
@@ -98,30 +100,36 @@ Same conventions: everything at the archive root, licences under `LICENSES/`,
 extraction into the consumer's staging directory is the whole staging step.
 
 ```
-libdxvk_d3d11.so              DXVK 2.7.1 + the Patches/dxvk/ series
+libdxvk_d3d11.so              identical to the SE1 archive's copy
 libdxvk_d3d11.so.0            -> libdxvk_d3d11.so              (symlink)
-libdxvk_dxgi.so
+libdxvk_dxgi.so               identical to the SE1 archive's copy
 libdxvk_dxgi.so.0             -> libdxvk_dxgi.so               (symlink)
-libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
-libfmod.so.<N>                -> libfmod.so                    (SONAME symlink)
-libfmodstudio.so              FMOD Studio API runtime
-libfmodstudio.so.<N>          -> libfmodstudio.so              (SONAME symlink)
+libvkd3d-proton-d3d12.so      identical to the SE1 archive's copy
+libvkd3d-proton-d3d12core.so  identical to the SE1 archive's copy
+libfmod.so.14                 FMOD Core API runtime (unmodified vendor blob)
+libfmodstudio.so.14           FMOD Studio API runtime (unmodified vendor blob)
+libVRage.KytheraV2.Native.so  SE2 native wrapper (vendor blob)
+libVRage.Physics.Native.so    SE2 native wrapper (vendor blob)
+libVRage.Slug.Native.so       SE2 native wrapper (vendor blob)
+libVRage.Voxels.Native.so     SE2 native wrapper (vendor blob)
 LICENSES/DXVK-LICENSE.txt
+LICENSES/FMOD-EULA.txt
 LICENSES/FMOD-NOTICE.txt
 LICENSES/README.txt
+LICENSES/VKD3D-LGPL-2.1.txt
+LICENSES/linux-native-wrappers-MIT.txt
+LICENSES/vkd3d-proton-README.txt
 ```
 
-The `<N>` SONAME aliases are derived from the committed blobs at build time
-(`libfmod.so.14` for FMOD 2.03.x), so an FMOD update changes them without a
-script edit. `libfmodstudio.so`'s `NEEDED` entry references `libfmod` by
-SONAME, which is why the aliases ship. The DXVK files get the same
-`DT_RUNPATH=$ORIGIN` treatment as in the SE1 archive; the FMOD blobs are
-shipped **unmodified** (no patchelf), matching how the EOS and Steamworks
-blobs are handled, so the consumer must load `libfmod` before (or alongside)
-`libfmodstudio`.
+The FMOD file names carry the upstream SONAMEs (`libfmod.so.14`), exactly as
+the SE2 port consumes them — `libfmodstudio.so.14`'s `NEEDED` entry
+references `libfmod` by that SONAME. The vendor blobs (FMOD and the
+wrappers) are shipped **unmodified** (no patchelf), matching how the EOS and
+Steamworks blobs are handled; the built libraries carry
+`DT_RUNPATH=$ORIGIN` as everywhere else.
 
-The corresponding `EXPECTED_FILES_SE2` array in `build.sh` is asserted only
-when the FMOD blobs are present.
+`build.sh` asserts the corresponding `EXPECTED_FILES_SE2` array before
+packaging, same as the SE1 list.
 
 ## Which files each consumer needs
 
@@ -134,6 +142,7 @@ maintained forever.
 | --- | :---: | :---: |
 | FFmpeg libraries | yes | no |
 | DXVK libraries | yes | no |
+| vkd3d-proton libraries | no (shipped under the patched-in-both policy) | no |
 | OpenAL library | yes | no |
 | `Steamworks.NET.dll` | yes | yes |
 | `libsteam_api.so` | yes | yes |
@@ -142,8 +151,9 @@ maintained forever.
 
 The SE2 archive is consumed only by the Space Engineers 2 Linux port, which
 takes all of it. The two archives are kept separate — rather than a `se2/`
-subdirectory inside the SE1 archive — so SE1 consumers never download or ship
-SE2 payload, and the SE1 contract above is untouched by SE2 churn.
+subdirectory inside the SE1 archive — so SE1 consumers never download or
+ship the SE2-only payload (FMOD, wrappers), while every **patched** library
+(DXVK, vkd3d-proton) appears in both archives as the same bytes.
 
 ## Versioning and tags
 

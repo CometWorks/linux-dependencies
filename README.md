@@ -10,12 +10,18 @@ published release archive instead of building these libraries themselves.
 
 ## What it ships
 
+DXVK Native and vkd3d-proton are built **once**, with the patch series under
+[Patches/](Patches/) applied, and the identical binaries ship in both
+archives. FMOD and the SE2 native wrappers ship only in the SE2 archive,
+because SE1 does not use them.
+
 ### `linux-dependencies.tar.gz` — Space Engineers 1
 
 | Artefact | Version | Licence |
 | --- | --- | --- |
 | FFmpeg (`libavcodec`, `libavformat`, `libavutil`, `libswresample`, `libswscale`) | 8.1 | LGPL-2.1-or-later |
-| DXVK Native (`libdxvk_d3d11.so`, `libdxvk_dxgi.so`) | 2.7.1 | zlib |
+| DXVK Native (`libdxvk_d3d11.so`, `libdxvk_dxgi.so`) + [Patches/dxvk/](Patches/dxvk/) | 2.7.1 | zlib |
+| vkd3d-proton (`libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so`) + [Patches/vkd3d-proton/](Patches/vkd3d-proton/) | pinned commit | LGPL-2.1 |
 | OpenAL Soft (`libopenal.so`) | 1.25.2 | LGPL-2.0-or-later |
 | `Steamworks.NET.dll` | pinned commit | MIT |
 | `libEOSSDK-Linux-Shipping.so` | vendor blob | proprietary (Epic) |
@@ -25,13 +31,10 @@ published release archive instead of building these libraries themselves.
 
 | Artefact | Version | Licence |
 | --- | --- | --- |
-| DXVK Native with the [Patches/dxvk/](Patches/dxvk/) series applied | 2.7.1 | zlib |
-| FMOD Engine (`libfmod.so`, `libfmodstudio.so`) | 2.03.11, matching the game | proprietary (Firelight) |
-
-The SE1 DXVK build stays pristine upstream; only the SE2 archive carries the
-patched variant. The SE2 archive is published once the FMOD runtime blobs are
-committed under [Vendor/se2/](Vendor/se2/) — until then `build.sh` skips it
-with a warning.
+| DXVK Native — same patched build as above | 2.7.1 | zlib |
+| vkd3d-proton — same patched build as above | pinned commit | LGPL-2.1 |
+| FMOD Engine (`libfmod.so.14`, `libfmodstudio.so.14`) | 2.03.11, matching the game | proprietary (Firelight) |
+| SE2 native wrappers (`libVRage.{KytheraV2,Physics,Slug,Voxels}.Native.so`) | vendor blobs | MIT |
 
 Everything, plus the third-party licence texts, is published as release
 assets on every release.

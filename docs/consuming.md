@@ -117,21 +117,23 @@ exactly which path each file came from.
 ## The SE2 archive
 
 The Space Engineers 2 Linux port consumes `linux-dependencies-se2.tar.gz`,
-which carries the patched DXVK build and the FMOD Engine runtime — see
-[release-archive.md](release-archive.md#layout-se2-archive) for the exact
+which carries the patched DXVK and vkd3d-proton builds (byte-identical to the
+SE1 archive's copies), the FMOD Engine runtime, and the SE2 native wrappers —
+see [release-archive.md](release-archive.md#layout-se2-archive) for the exact
 contents. It follows the same fetch pattern (same release, second asset name)
 and the same rules: extract with symlink-preserving `tar`, keep `LICENSES/`
 next to the binaries.
 
 Two SE2-specific notes:
 
-* The FMOD blobs ship **unmodified** (no `DT_RUNPATH` patching), and
-  `libfmodstudio.so` references `libfmod` by SONAME. Load (or preload)
-  `libfmod` before `libfmodstudio`, or make sure the staging directory is on
-  the loader's search path for that resolution.
-* The asset exists only in releases built after the FMOD blobs were committed
-  under `Vendor/se2/`; a fetch script should fail with a clear message when
-  the asset is missing from an old pinned tag.
+* The vendor blobs (FMOD, wrappers) ship **unmodified** (no `DT_RUNPATH`
+  patching), and `libfmodstudio.so.14` references `libfmod` by its SONAME
+  (`libfmod.so.14`). Load (or preload) `libfmod.so.14` before
+  `libfmodstudio.so.14`, or make sure the staging directory is on the
+  loader's search path for that resolution.
+* The asset exists only from the release that introduced it onward; a fetch
+  script should fail with a clear message when the asset is missing from an
+  older pinned tag.
 
 ## Adding a new consumer
 

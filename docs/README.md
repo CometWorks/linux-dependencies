@@ -22,8 +22,7 @@ Linux](https://github.com/CometWorks/Pulsar) and
 ./build.sh
 ```
 
-That builds everything from source, stages it in `build/Libraries/` (SE1) and
+That builds everything from source once, stages `build/Libraries/` (SE1) and
 `build/Libraries-SE2/` (SE2), and packages `dist/linux-dependencies.tar.gz`
-plus — once the FMOD blobs are committed under `Vendor/se2/` —
-`dist/linux-dependencies-se2.tar.gz`. See [building.md](building.md) for
+and `dist/linux-dependencies-se2.tar.gz`. See [building.md](building.md) for
 prerequisites and options.

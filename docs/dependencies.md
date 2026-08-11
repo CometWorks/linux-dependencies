@@ -5,16 +5,20 @@ pinned. To change any of these, see [maintenance.md](maintenance.md).
 
 ## Summary
 
-| Dependency | Archive | Version / pin | Licence | Built by |
+Every library is built (or staged) **once**; DXVK and vkd3d-proton are
+patched and the identical binaries ship in both archives.
+
+| Dependency | Archives | Version / pin | Licence | Built by |
 | --- | --- | --- | --- | --- |
 | FFmpeg | SE1 | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
-| DXVK Native | SE1 | tag `v2.7.1` | zlib | `Scripts/build_dxvk.sh` |
-| DXVK Native + `Patches/dxvk/` series | SE2 | tag `v2.7.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh --se2` |
+| DXVK Native + `Patches/dxvk/` series | both | tag `v2.7.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
+| vkd3d-proton + `Patches/vkd3d-proton/` series | both | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
 | OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
 | Steamworks.NET | SE1 | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
 | Steamworks SDK | SE1 | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
 | FMOD Engine | SE2 | vendor blob (manual), 2.03.11 to match the game | proprietary (Firelight) | committed under `Vendor/se2/` |
+| SE2 native wrappers | SE2 | vendor blobs (linux-native-wrappers builds) | MIT | committed under `Vendor/se2/` |
 
 `Scripts/build_sdl3.sh` builds SDL3 3.4.12 as well, but nothing from it is
 shipped — it exists only so DXVK has headers to compile against. See
@@ -96,19 +100,18 @@ pointer accurate.
 
 ---
 
-## DXVK Native 2.7.1
+## DXVK Native 2.7.1 (patched)
 
 **Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so`, each with a `.so.0`
-SONAME symlink — twice: a pristine SE1 variant and a patched SE2 variant, see
-below.
+SONAME symlink, built once with the [Patches/dxvk/](../Patches/dxvk/) series
+applied and shipped identically in both archives.
 
 **Source:** `https://github.com/doitsujin/dxvk.git` at tag `v2.7.1`, shallow
-clone with submodules, cached under `build/dxvk/` (SE1) and `build/dxvk-se2/`
-(SE2).
+clone with submodules, cached under `build/dxvk/`.
 
-**Consumed by:** Pulsar (SE1 variant) and the Space Engineers 2 Linux port
-(SE2 variant). Magnetar is headless and does not need a D3D11 implementation.
-(The SE1 archive is shared, so Magnetar simply ignores these two files — see
+**Consumed by:** Pulsar and the Space Engineers 2 Linux port. Magnetar is
+headless and does not need a D3D11 implementation. (The SE1 archive is
+shared, so Magnetar simply ignores these files — see
 [consuming.md](consuming.md).)
 
 **How it is built:** by shelling out to upstream's own `package-native.sh`
@@ -152,39 +155,64 @@ Both choices were verified to be neutral: DXVK built against the pinned,
 console-only 3.4.12 is byte-identical to DXVK built against a full system
 SDL3 3.5.0.
 
-**Caching:** `build/dxvk.stamp` records the built version. A rerun with the
-same `DXVK_VERSION` and all outputs present skips the build entirely.
+### The patch series
 
-### The SE2 variant
-
-`build_dxvk.sh --se2` builds the same pinned tag a second time with the patch
-series under [Patches/dxvk/](../Patches/dxvk/) applied first, and stages the
-result into `build/Libraries-SE2/` for the SE2 archive. The patches are
-source-level fixes for DXVK bugs the Space Engineers 2 client hits; fixing
-them here replaces what would otherwise be a much larger set of managed
-(Harmony) runtime patches in the SE2 compatibility layer. The rationale for
-each patch is documented in `Patches/dxvk/README.md` alongside its
-provenance.
+The series under [Patches/dxvk/](../Patches/dxvk/) is applied onto the
+pristine tag before every build. The patches are source-level fixes for DXVK
+bugs the Space Engineers clients hit; fixing them here replaces what would
+otherwise be a much larger set of managed (Harmony) runtime patches in the
+Linux compatibility layers. The rationale for each patch is documented in
+`Patches/dxvk/README.md` alongside its provenance. The most important one
+makes `WCHAR` 16-bit (the Windows ABI) so `IDXGIAdapter::GetDesc*` cannot
+overrun the caller's Windows-layout buffers.
 
 Mechanics worth knowing:
 
-* **Separate clone.** The SE2 build uses `build/dxvk-se2/`, not a reset of
-  the SE1 clone, so a patched tree can never leak into the pristine SE1 build
-  and both variants stay independently cached.
-* **Pristine base every run.** The cached SE2 clone is reset
+* **Pristine base every run.** The cached clone is reset
   (`git checkout -- .` + `git clean -fdx`, including submodules) before the
   series is applied, so patches never stack across runs. This forfeits ninja
-  incrementality for the SE2 variant — the price of a guaranteed clean base.
-* **The series is part of the cache key.** `build/dxvk-se2.stamp` records
+  incrementality — the price of a guaranteed clean base.
+* **The series is part of the cache key.** `build/dxvk.stamp` records
   `<version> patches=<sha256 of the series>`, so adding, editing or removing
-  a patch rebuilds the SE2 variant only. An empty series is valid and builds
-  pristine upstream.
+  a patch triggers a rebuild. An empty series is valid and builds pristine
+  upstream.
 * **A patch that fails to apply fails the build**, naming the patch — the
   signal that a `DXVK_VERSION` bump needs the series rebased.
 
-The SE1 variant is deliberately left untouched by all of this: SE1 consumers
-keep shipping byte-identical pristine DXVK, so the patches never need to be
-reviewed for SE1 regressions.
+---
+
+## vkd3d-proton (patched)
+
+**Produces:** `libvkd3d-proton-d3d12.so` and `libvkd3d-proton-d3d12core.so`,
+built once with the [Patches/vkd3d-proton/](../Patches/vkd3d-proton/) series
+applied and shipped identically in both archives.
+
+**Source:** `https://github.com/HansKristian-Work/vkd3d-proton.git` at commit
+`3dfc6f07d0953b1e8b41705275c2c59cc7374fc5`, fetched by SHA (depth 1) with
+submodules, cached under `build/vkd3d-proton/`. The pin is a commit rather
+than a tag because the patch series was developed and tested against exactly
+this upstream state.
+
+**Consumed by:** the Space Engineers 2 client, whose renderer is Direct3D 12
+(VRage3 Render12). It ships in the SE1 archive as well under the
+patched-libraries-appear-in-both policy; SE1 consumers simply ignore it.
+
+**How it is built:** a plain native meson build (`--buildtype release`),
+installed into `build/vkd3d-proton-out/` and staged from there. vkd3d-proton
+generates its COM headers with `widl` (the Wine IDL compiler); the build
+script accepts `widl`, `widl-stable`, or Ubuntu's
+`x86_64-w64-mingw32-widl` from the `mingw-w64-tools` package, shimming the
+latter onto `PATH` under the name meson expects.
+
+The patch series, cache stamp, pristine-reset and failure behaviour follow
+the same rules as DXVK above; the patches themselves (a DXGI adapter-parent
+fix required for `CreateSwapChainForHwnd`, and an env-gated llvmpipe FP64
+override used only by the CPU-rendering test harness) are documented in
+`Patches/vkd3d-proton/README.md`.
+
+Being LGPL-2.1, the archives carry `LICENSES/VKD3D-LGPL-2.1.txt` plus
+`LICENSES/vkd3d-proton-README.txt` with build provenance and relinking notes
+— the same obligation pattern as FFmpeg.
 
 ---
 
@@ -281,6 +309,23 @@ Neither has a public source repository or a publicly fetchable binary; both
 downloads are gated behind logged-in partner portals. Updating them is a manual
 maintainer task documented in [maintenance.md](maintenance.md) and in
 [Vendor/README.md](../Vendor/README.md).
+
+### SE2 vendor blobs
+
+`Vendor/se2/` holds the binary-only libraries of the SE2 archive:
+
+* **`libfmod.so.14`, `libfmodstudio.so.14`** — the FMOD Engine runtime
+  (Core + Studio), version **2.03.11** to match the FMOD the game ships.
+  The FMOD API is version-locked: SE2's managed wrapper is generated for the
+  game's FMOD version, so these must track it at least to the minor release.
+* **`libVRage.KytheraV2.Native.so`, `libVRage.Physics.Native.so`,
+  `libVRage.Slug.Native.so`, `libVRage.Voxels.Native.so`** — MIT-licensed
+  Linux wrapper builds of the game's Keen-built native DLL surface, built
+  from the `linux-native-wrappers` sister repository. Committed as blobs
+  because no SE2 wrapper release exists yet; they should switch to a
+  wrappers-repo release when one does.
+
+Provenance and update rules: [Vendor/se2/README.md](../Vendor/se2/README.md).
 
 ---
 
