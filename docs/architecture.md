@@ -37,7 +37,7 @@ for the PE-loader shims.
 | `Steamworks.NET.dll` | SE1 | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
 | `libsteam_api.so` | SE1 | Proprietary Valve blob, committed under `Vendor/` |
-| `libfmod.so.14`, `libfmodstudio.so.14` | SE2 | Proprietary Firelight blobs, committed under `Vendor/` |
+| `libfmod.so`, `libfmodstudio.so` | SE2 | Proprietary Firelight blobs, committed under `Vendor/` |
 | `LICENSES/*.txt` | both | Third-party licence texts and attribution, committed under `Licenses/` |
 
 Two policies shape the archive split:
@@ -121,14 +121,17 @@ a `DllNotFoundException` inside Space Engineers three repos downstream.
 ### `DT_RUNPATH=$ORIGIN` on every native library
 
 The shipped libraries reference each other (`libavformat` needs
-`libavcodec.so.62`, which needs `libavutil.so.60`). Without an rpath, glibc
-resolves those through the system search path, which does not include the
+`libavcodec`, which needs `libavutil`). Without an rpath, glibc resolves
+those through the system search path, which does not include the
 executable's own directory — so they would either fail to load or, worse,
 silently bind to a different-ABI FFmpeg from the host's `ld.so.cache`.
 
-Baking `$ORIGIN` into `DT_RUNPATH` makes each library find its siblings next to
-itself, which means the consumer's launcher does not have to manipulate
-`LD_LIBRARY_PATH` at all.
+Baking `$ORIGIN` into `DT_RUNPATH` makes each library find its siblings next
+to itself, which means the consumer's launcher does not have to manipulate
+`LD_LIBRARY_PATH` at all. Because the archives carry only bare, unversioned
+file names, the built libraries' intra-bundle `NEEDED` entries are rewritten
+to those bare names at staging time — otherwise they would ask the loader
+for SONAME-named files that no longer ship.
 
 ### FFmpeg is built with almost everything disabled
 

@@ -88,8 +88,8 @@ mkdir -p "$BUILD_DIR" "$LIBRARIES_DIR"
 
 if [ "$CLEAN" = "1" ]; then
     rm -rf "$OPENAL_SRC_DIR"
-elif [ -e "$LIBRARIES_DIR/$EXPECTED_SONAME" ] \
-   && [ -e "$LIBRARIES_DIR/libopenal.so" ] \
+elif [ -e "$LIBRARIES_DIR/libopenal.so" ] \
+   && [ ! -L "$LIBRARIES_DIR/libopenal.so" ] \
    && [ -f "$STAMP_FILE" ] \
    && [ "$(cat "$STAMP_FILE")" = "$OPENAL_VERSION" ]; then
     echo "==> Cached build matches OpenAL Soft $OPENAL_VERSION; skipping rebuild"
@@ -242,15 +242,16 @@ if [ "$DEP_LEAK" = "1" ]; then
 fi
 
 # ---- stage ------------------------------------------------------------------
-# Ship the real file under its SONAME plus an unversioned alias, matching how
-# the FFmpeg libraries are laid out. Clear the previous build's files first so
-# a version bump cannot leave a stale copy behind.
+# Ship the real file under the bare unversioned name — the archives carry no
+# symlinks and no version-suffixed filenames. The SONAME inside the binary is
+# left as upstream produced it (asserted above); consumers load the library
+# by file name. Clear the previous build's files first so a version bump (or
+# the pre-bare-name layout) cannot leave a stale copy behind.
 
 echo "==> Staging OpenAL into $LIBRARIES_DIR"
 find "$LIBRARIES_DIR" -maxdepth 1 -name 'libopenal.so*' -delete
 
-install -m 0755 "$REAL_LIB" "$LIBRARIES_DIR/$EXPECTED_SONAME"
-ln -sfn "$EXPECTED_SONAME" "$LIBRARIES_DIR/libopenal.so"
+install -m 0755 "$REAL_LIB" "$LIBRARIES_DIR/libopenal.so"
 
 printf '%s\n' "$OPENAL_VERSION" > "$STAMP_FILE"
 

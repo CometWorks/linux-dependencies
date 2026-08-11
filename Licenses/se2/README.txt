@@ -16,7 +16,7 @@ Files in this directory:
     vkd3d-proton-README.txt       Build provenance + LGPL relinking notes
                                   (patch series under Patches/vkd3d-proton/)
     FMOD-EULA.txt                 FMOD End User License Agreement covering
-                                  libfmod.so.14 and libfmodstudio.so.14
+                                  libfmod.so and libfmodstudio.so
                                   (proprietary, Firelight Technologies)
     FMOD-NOTICE.txt               FMOD attribution notice
 

@@ -32,31 +32,21 @@ curl -fL -o linux-dependencies-se2.tar.gz \
 
 ## Layout (SE1 archive)
 
-Every library sits at the archive root; licence texts sit in a single
-`LICENSES/` subdirectory. There is no top-level wrapper directory, so
+Every library sits at the archive root as a **single real file under its
+bare, unversioned name** — no symlinks, no version-suffixed filenames.
+Licence texts sit in a single `LICENSES/` subdirectory. There is no
+top-level wrapper directory, so
 `tar -xzf linux-dependencies.tar.gz -C <staging dir>` is the whole staging
 step.
 
 ```
-libavcodec.so                 -> libavcodec.so.62.28.100     (symlink)
-libavcodec.so.62              -> libavcodec.so.62.28.100     (symlink)
-libavcodec.so.62.28.100
-libavformat.so                -> libavformat.so.62.12.100    (symlink)
-libavformat.so.62             -> libavformat.so.62.12.100    (symlink)
-libavformat.so.62.12.100
-libavutil.so                  -> libavutil.so.60.26.100      (symlink)
-libavutil.so.60               -> libavutil.so.60.26.100      (symlink)
-libavutil.so.60.26.100
-libswresample.so              -> libswresample.so.6.3.100    (symlink)
-libswresample.so.6            -> libswresample.so.6.3.100    (symlink)
-libswresample.so.6.3.100
-libswscale.so                 -> libswscale.so.9.5.100       (symlink)
-libswscale.so.9               -> libswscale.so.9.5.100       (symlink)
-libswscale.so.9.5.100
-libdxvk_d3d11.so                                      (patched, see Patches/dxvk/)
-libdxvk_d3d11.so.0            -> libdxvk_d3d11.so     (symlink)
-libdxvk_dxgi.so                                       (patched)
-libdxvk_dxgi.so.0             -> libdxvk_dxgi.so      (symlink)
+libavcodec.so
+libavformat.so
+libavutil.so
+libswresample.so
+libswscale.so
+libdxvk_d3d11.so              (patched, see Patches/dxvk/)
+libdxvk_dxgi.so               (patched)
 libEOSSDK-Linux-Shipping.so
 libsteam_api.so
 Steamworks.NET.dll
@@ -74,10 +64,15 @@ LICENSES/Steamworks.NET-LICENSE.txt
 
 ### Guarantees
 
-* **Symlinks are stored as symlinks**, not dereferenced into duplicate files.
-  Extract with GNU `tar` (or anything that preserves them) so the
-  `libavcodec.so` → `.so.62` → `.so.62.28.100` chain survives. This is also why
-  the archive is 23 MB rather than several times that.
+* **No symlinks and no version-suffixed filenames.** Each library is one
+  real file under its bare name. The SONAMEs *inside* the built binaries are
+  left as upstream produced them (useful for identifying the version with
+  `readelf`), but no file is named after them.
+* **Intra-bundle `NEEDED` entries reference the bare file names.** The
+  built libraries' cross-references (libavformat → libavcodec → libavutil,
+  libdxvk_d3d11 → libdxvk_dxgi) are rewritten with
+  `patchelf --replace-needed` at staging time, so together with
+  `DT_RUNPATH=$ORIGIN` they resolve against the files actually present.
 * **Every native `.so` has `DT_RUNPATH=$ORIGIN`**, so the libraries find each
   other next to themselves and no `LD_LIBRARY_PATH` manipulation is needed.
 * **The FFmpeg libraries depend only on glibc and libz.** Verified by an `ldd`
@@ -98,13 +93,11 @@ extraction into the consumer's staging directory is the whole staging step.
 
 ```
 libdxvk_d3d11.so              identical to the SE1 archive's copy
-libdxvk_d3d11.so.0            -> libdxvk_d3d11.so              (symlink)
 libdxvk_dxgi.so               identical to the SE1 archive's copy
-libdxvk_dxgi.so.0             -> libdxvk_dxgi.so               (symlink)
 libvkd3d-proton-d3d12.so      patched, see Patches/vkd3d-proton/ (SE2 only)
 libvkd3d-proton-d3d12core.so  patched (SE2 only)
-libfmod.so.14                 FMOD Core API runtime (unmodified vendor blob)
-libfmodstudio.so.14           FMOD Studio API runtime (unmodified vendor blob)
+libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
+libfmodstudio.so              FMOD Studio API runtime (unmodified vendor blob)
 LICENSES/DXVK-LICENSE.txt
 LICENSES/FMOD-EULA.txt
 LICENSES/FMOD-NOTICE.txt
@@ -113,13 +106,15 @@ LICENSES/VKD3D-LGPL-2.1.txt
 LICENSES/vkd3d-proton-README.txt
 ```
 
-The FMOD file names carry the upstream SONAMEs (`libfmod.so.14`), exactly as
-the SE2 port consumes them — `libfmodstudio.so.14`'s `NEEDED` entry
-references `libfmod` by that SONAME. The FMOD blobs are shipped
-**unmodified** (no patchelf), matching how the EOS and Steamworks blobs are
-handled; the built libraries carry `DT_RUNPATH=$ORIGIN` as everywhere else.
-The SE2 native wrappers (`libVRage.*.Native.so`) are **not** in this
-archive; like the SE1 wrappers, they come from
+The FMOD blobs are shipped **unmodified** (no patchelf), matching how the
+EOS and Steamworks blobs are handled — only their file names are the bare
+ones. That means `libfmodstudio.so`'s internal `NEEDED` entry still
+references the upstream SONAME `libfmod.so.14`, which no shipped file
+carries: **the consumer must load `libfmod.so` before `libfmodstudio.so`**
+(the already-loaded library then satisfies the reference by SONAME). The
+built libraries carry `DT_RUNPATH=$ORIGIN` and bare-name `NEEDED` entries as
+in the SE1 archive. The SE2 native wrappers (`libVRage.*.Native.so`) are
+**not** in this archive; like the SE1 wrappers, they come from
 [CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
 
 `build.sh` asserts the corresponding `EXPECTED_FILES_SE2` array before

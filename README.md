@@ -32,7 +32,7 @@ FMOD) ships only in the SE2 archive.
 | --- | --- | --- |
 | DXVK Native — same patched build as above | 2.7.1 | zlib |
 | vkd3d-proton (`libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so`) + [Patches/vkd3d-proton/](Patches/vkd3d-proton/) | pinned commit | LGPL-2.1 |
-| FMOD Engine (`libfmod.so.14`, `libfmodstudio.so.14`) | 2.03.11, matching the game | proprietary (Firelight) |
+| FMOD Engine (`libfmod.so`, `libfmodstudio.so`) | 2.03.11, matching the game | proprietary (Firelight) |
 
 Everything, plus the third-party licence texts, is published as release
 assets on every release.

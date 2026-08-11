@@ -19,23 +19,15 @@ Every push to `main` publishes a new public release, so the normal flow is:
 1. Set `FFMPEG_VERSION` in `Scripts/build_ffmpeg.sh`.
 2. Build. If the SOVERSIONs moved, the script fails with `expected lib not
    built: …` — that failure is the point.
-3. On a SOVERSION change, update **all** of these together:
-   * `EXPECTED_SOVER` in `Scripts/build_ffmpeg.sh`
-   * `EXPECTED_FILES` in `build.sh` (the fully-versioned filenames too)
-   * the file list in [release-archive.md](release-archive.md)
-   * the version table in `Licenses/FFmpeg-README.txt`
-   * **Pulsar's `LibraryVersionMap`** in
-     `ClientPlugin/Audio/MySdlAudioInterop.cs` — FFmpeg.AutoGen resolves the
-     libraries by SOVERSION, so a mismatch is a runtime
-     `DllNotFoundException`, not a build error.
+3. On a SOVERSION change, update `EXPECTED_SOVER` in
+   `Scripts/build_ffmpeg.sh` and update the version table in
+   `Licenses/FFmpeg-README.txt`. The archive file names are the bare,
+   unversioned ones, so `EXPECTED_FILES` and the consumers' file lists do
+   not change — but a SOVERSION shift is an upstream ABI bump, so confirm
+   the FFmpeg.AutoGen version Pulsar uses matches the new FFmpeg major
+   version before shipping it.
 4. Check the `ldd` allow-list still passes. A new upstream release sometimes
    enables something by default that the disable list did not anticipate.
-5. Confirm the FFmpeg.AutoGen version Pulsar uses still matches the FFmpeg
-   major version.
-
-The full-version filenames (`libavcodec.so.62.28.100`) change on almost every
-FFmpeg release even when the SOVERSION does not, so expect step 3's file lists
-to need editing regardless.
 
 ## Bumping DXVK
 
@@ -88,11 +80,11 @@ against much newer headers than the SDL3 in the wild is still worth avoiding.
 1. Set `OPENAL_VERSION` **and** `OPENAL_SHA256` in `Scripts/build_openal.sh`.
    The tarball URL is mutable, so the checksum is the pin — a version bump
    without a matching checksum fails the download verification, by design.
-2. Build. If upstream bumps the SONAME past `libopenal.so.1`, the script fails
-   with an explicit message; update `EXPECTED_SONAME` there, `EXPECTED_FILES`
-   in `build.sh`, the file list in `release-archive.md`, and Pulsar's
-   expected-file lists and `/app/lib` symlink together. Silk.NET dlopens by
-   SONAME, so a mismatch means the bundled library is silently unused.
+2. Build. If upstream bumps the SONAME past `libopenal.so.1`, the script
+   fails with an explicit message; update `EXPECTED_SONAME` there. The
+   shipped file name stays the bare `libopenal.so`, so no file list changes
+   — but a SONAME bump is an upstream ABI break, so review the consumers
+   before shipping it.
 3. Check the `ldd` allow-list still passes. A new backend that links rather
    than dlopens would show up there.
 4. Update the version in `Licenses/OpenAL-Soft-README.txt`, and re-copy
@@ -141,9 +133,11 @@ the game ships, so the blobs must match it at least to the minor release.
    <https://www.fmod.com/download> (login required).
 3. Copy the two x86_64 release-variant runtimes under their SONAME file
    names — the exact paths and rules are in
-   [Vendor/README.md](../Vendor/README.md). If the SONAME digit changed
-   (a new FMOD major/minor), update the copy step and `EXPECTED_FILES_SE2`
-   in `build.sh` and the file list in `release-archive.md` together.
+   [Vendor/README.md](../Vendor/README.md). The archive names stay the bare
+   `libfmod.so` / `libfmodstudio.so` regardless; if the SONAME digit changed
+   (a new FMOD major/minor), update the committed file names and the copy
+   step in `build.sh` together, and mention the new preload SONAME in
+   [consuming.md](consuming.md#the-se2-archive).
 4. Commit and push.
 
 ## Changing the archive layout
@@ -179,6 +173,6 @@ note it in the release notes.
 * [ ] `docs/dependencies.md` version table updated
 * [ ] `docs/release-archive.md` file list updated if any filename changed
 * [ ] Licence texts still accurate for the new version
-* [ ] Downstream impact considered (Pulsar's `LibraryVersionMap`, Magnetar's
-      expected files)
+* [ ] Downstream impact considered (consumer expected-file lists, ABI
+      changes behind unchanged bare file names)
 * [ ] Draft release from the PR tested against at least one consumer

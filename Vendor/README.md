@@ -46,9 +46,10 @@ Ship in the SE2 archive only — Space Engineers 1 does not use FMOD.
 * Source: <https://www.fmod.com/download> (login required) -> FMOD Engine ->
   Linux -> version **2.03.11**, matching the FMOD the game ships (verified
   against the `FileVersion` resource of the game's `fmod.dll`:
-  2.03.11 build 158528). The file names carry the upstream SONAMEs
-  (`libfmod.so.14`), exactly as the SE2 port consumes them. Release
-  variants, **not** the `L` (logging) builds.
+  2.03.11 build 158528). The committed file names carry the upstream SONAMEs
+  (`libfmod.so.14`) for provenance; `build.sh` stages them into the archive
+  under the bare names (`libfmod.so`, `libfmodstudio.so`), binaries
+  unmodified. Release variants, **not** the `L` (logging) builds.
 * License: proprietary; redistribution of the unmodified runtime is
   permitted by the FMOD EULA. Shipped alongside as `LICENSES/FMOD-EULA.txt`
   and `LICENSES/FMOD-NOTICE.txt` (sources under
@@ -56,9 +57,9 @@ Ship in the SE2 archive only — Space Engineers 1 does not use FMOD.
 * **Version rule:** the FMOD API is version-locked — the managed wrapper
   inside SE2 is generated for the game's FMOD version, so these blobs must
   match it at least to the minor release. When the game updates its FMOD,
-  update these in lockstep; if the SONAME digit changes, update `build.sh`
-  (the copy step and `EXPECTED_FILES_SE2`) and `docs/release-archive.md`
-  together. See [docs/maintenance.md](../docs/maintenance.md).
+  update these in lockstep; if the SONAME digit changes, update the committed
+  file names and the copy step in `build.sh` together (the archive names stay
+  bare). See [docs/maintenance.md](../docs/maintenance.md).
 
 ## Why these are committed (and the others are not)
 

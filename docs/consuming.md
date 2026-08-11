@@ -28,15 +28,15 @@ cache that its `build.sh` then copies the wanted files out of.
    staged. If it matches the resolved tag and every expected file is already
    present, the download is skipped.
 3. **Clear what the previous release staged.** `tar` only overlays, so without
-   this a release that renames a file — an FFmpeg SOVERSION bump, say — would
-   leave the old one behind and the consumer would ship both. Pulsar extracts
-   into a directory it shares with the native-wrapper fetch, so it records a
+   this a release that renames or removes a file would leave the old one
+   behind and the consumer would ship both. Pulsar extracts into a directory
+   it shares with the native-wrapper fetch, so it records a
    `build/linux-dependencies.manifest` of the paths each release owns and
    removes only those. Magnetar extracts into a directory of its own and can
-   simply wipe it.
-4. **Download and extract**, preserving symlinks — `tar -xz`, never a
-   dereferencing copy, or the `libavcodec.so` → `.so.62` → `.so.62.28.100`
-   chain that FFmpeg's SONAME resolution needs would be flattened.
+   simply wipe it. (This is what makes the bare-filename layout transition
+   safe: the versioned files and symlinks of older releases are cleared.)
+4. **Download and extract.** The archives contain only real files under
+   bare, unversioned names — no symlink chains to preserve.
 5. **Verify** that the files that consumer needs actually arrived.
 
 If the GitHub API is unreachable but a cached copy is already staged, the
@@ -128,11 +128,11 @@ as for SE1.
 
 Two SE2-specific notes:
 
-* The FMOD blobs ship **unmodified** (no `DT_RUNPATH` patching), and
-  `libfmodstudio.so.14` references `libfmod` by its SONAME
-  (`libfmod.so.14`). Load (or preload) `libfmod.so.14` before
-  `libfmodstudio.so.14`, or make sure the staging directory is on the
-  loader's search path for that resolution.
+* The FMOD blobs ship **unmodified** (no patchelf) under the bare names, so
+  `libfmodstudio.so`'s internal `NEEDED` entry still references the upstream
+  SONAME `libfmod.so.14`, which no shipped file carries. **Load `libfmod.so`
+  (globally) before `libfmodstudio.so`** — the already-loaded library then
+  satisfies the reference by SONAME.
 * The asset exists only from the release that introduced it onward; a fetch
   script should fail with a clear message when the asset is missing from an
   older pinned tag.

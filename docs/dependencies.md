@@ -28,19 +28,22 @@ shipped — it exists only so DXVK has headers to compile against. See
 
 ## FFmpeg 8.1
 
-**Produces:** `libavcodec.so.62`, `libavformat.so.62`, `libavutil.so.60`,
-`libswresample.so.6`, `libswscale.so.9`, each with an unversioned `.so` alias
-and a fully-versioned real file.
+**Produces:** `libavcodec.so`, `libavformat.so`, `libavutil.so`,
+`libswresample.so`, `libswscale.so` — one real file each under the bare
+name (the archives carry no symlinks and no version-suffixed filenames).
+The SONAMEs inside the binaries stay as upstream produced them
+(`libavcodec.so.62`, …), but the cross-FFmpeg `NEEDED` entries are rewritten
+to the bare names at staging time so `DT_RUNPATH=$ORIGIN` resolves siblings
+against the files actually shipped.
 
 **Source:** `https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz`, downloaded and
 cached under `build/`.
 
-**Consumed by:** Pulsar's audio and video playback, through FFmpeg.AutoGen 8.1.
-The SOVERSIONs are not incidental — `ClientPlugin/Audio/MySdlAudioInterop.cs`
-in Pulsar contains a `LibraryVersionMap` that names them explicitly, so a
-SOVERSION bump on either side without the other produces a
-`DllNotFoundException` at runtime. `build_ffmpeg.sh` has an `EXPECTED_SOVER`
-table that fails the build if the versions shift.
+**Consumed by:** Pulsar's audio and video playback, through FFmpeg.AutoGen 8.1,
+loading the libraries by their bare file names. The upstream SOVERSIONs are
+still pinned: `build_ffmpeg.sh` has an `EXPECTED_SOVER` table that fails the
+build if they shift, because a shift means an upstream ABI bump that the
+consumers' FFmpeg.AutoGen version must match.
 
 ### Why the build is configured the way it is
 
@@ -102,9 +105,11 @@ pointer accurate.
 
 ## DXVK Native 2.7.1 (patched)
 
-**Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so`, each with a `.so.0`
-SONAME symlink, built once with the [Patches/dxvk/](../Patches/dxvk/) series
-applied and shipped identically in both archives.
+**Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so` (bare names, no
+SONAME symlinks; `libdxvk_d3d11`'s `NEEDED` reference to the dxgi library is
+rewritten from the SONAME to the bare name), built once with the
+[Patches/dxvk/](../Patches/dxvk/) series applied and shipped identically in
+both archives.
 
 **Source:** `https://github.com/doitsujin/dxvk.git` at tag `v2.7.1`, shallow
 clone with submodules, cached under `build/dxvk/`.
@@ -219,7 +224,9 @@ Being LGPL-2.1, the SE2 archive carries `LICENSES/VKD3D-LGPL-2.1.txt` plus
 
 ## OpenAL Soft 1.25.2
 
-**Produces:** `libopenal.so.1`, with an unversioned `libopenal.so` alias.
+**Produces:** `libopenal.so` — the real file under the bare name. The SONAME
+inside the binary remains `libopenal.so.1` (asserted at build time) but no
+file is named after it; consumers load the library by file name.
 
 **Source:** `https://openal-soft.org/openal-releases/openal-soft-1.25.2.tar.bz2`,
 downloaded and cached under `build/`. A tarball URL is mutable, so unlike the
@@ -227,8 +234,8 @@ git-tag clones elsewhere the pin here is a SHA-256 checksum, verified on every
 run.
 
 **Consumed by:** Pulsar only. Space Engineers' Linux audio goes through
-Silk.NET.OpenAL (used by se-linux-compat), which dlopens `libopenal.so.1` at
-runtime. Magnetar is headless and does not stage it.
+Silk.NET.OpenAL (used by se-linux-compat), loading the bundled `libopenal.so`
+by file name. Magnetar is headless and does not stage it.
 
 **Why it lives here.** It used to be handled three different ways depending on
 the bundle: compiled from source inside Pulsar's Flatpak manifest, and left to
@@ -263,10 +270,11 @@ hard-requires that specific audio stack.
 
 ### Post-build verification
 
-The **SONAME is asserted** to be `libopenal.so.1`. Silk.NET dlopens by SONAME,
-so a bump would leave the bundled copy unused while the application silently
-fell back to the host's — or found none at all. `DT_RUNPATH=$ORIGIN` is patched
-on and re-checked, as for FFmpeg and DXVK.
+The **SONAME is asserted** to be `libopenal.so.1`. The shipped file is the
+bare `libopenal.so` either way, but a SONAME bump signals an upstream
+major-version (ABI) change that the consumers should review rather than pick
+up silently. `DT_RUNPATH=$ORIGIN` is patched on and re-checked, as for
+FFmpeg and DXVK.
 
 ---
 
@@ -313,11 +321,13 @@ maintainer task documented in [maintenance.md](maintenance.md) and in
 
 A third proprietary runtime ships in the SE2 archive only:
 
-* **`libfmod.so.14`, `libfmodstudio.so.14`** — the FMOD Engine runtime
+* **`libfmod.so`, `libfmodstudio.so`** — the FMOD Engine runtime
   (Core + Studio), version **2.03.11** to match the FMOD the game ships.
-  The FMOD API is version-locked: SE2's managed wrapper is generated for the
-  game's FMOD version, so these must track it at least to the minor release.
-  SE1 does not use FMOD.
+  Committed under `Vendor/` with the upstream SONAME file names
+  (`libfmod.so.14`) for provenance, staged into the archive under the bare
+  names, binaries unmodified. The FMOD API is version-locked: SE2's managed
+  wrapper is generated for the game's FMOD version, so these must track it
+  at least to the minor release. SE1 does not use FMOD.
 
 Provenance and update rules: [Vendor/README.md](../Vendor/README.md).
 

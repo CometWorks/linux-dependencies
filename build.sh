@@ -18,9 +18,9 @@
 #
 # Pipeline (in order):
 #
-#   1. Scripts/build_ffmpeg.sh          FFmpeg 8.1 (libav*.so* / libsw*.so*)
+#   1. Scripts/build_ffmpeg.sh          FFmpeg 8.1 (libav*.so / libsw*.so)
 #   2. Scripts/build_dxvk.sh            DXVK Native v2.7.1 + Patches/dxvk/
-#                                       (libdxvk_d3d11.so + libdxvk_dxgi.so + .0 links)
+#                                       (libdxvk_d3d11.so + libdxvk_dxgi.so)
 #   3. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
 #                                       Patches/vkd3d-proton/, staged straight
 #                                       into Libraries-SE2/
@@ -30,8 +30,9 @@
 #                                       Libraries/ into Libraries-SE2/
 #   7. Vendor copy:                     libEOSSDK-Linux-Shipping.so + libsteam_api.so
 #                                       (proprietary, committed under Vendor/)
-#   8. SE2 vendor copy:                 the FMOD runtime (libfmod.so.14 +
-#                                       libfmodstudio.so.14) from Vendor/
+#   8. SE2 vendor copy:                 the FMOD runtime from Vendor/, staged
+#                                       under the bare names (libfmod.so +
+#                                       libfmodstudio.so)
 #   9. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
 #                                       DXVK + Licenses/se2/*.txt -> LICENSES/ (SE2)
 #  10. Final assertion:                 every expected artefact is present
@@ -191,21 +192,21 @@ run_step steamworks-net "$SCRIPTS_DIR/build_steamworks_net.sh"
 
 # ---- 6. shared artefacts: patched DXVK -> Libraries-SE2/ --------------------
 # The patched DXVK libraries ship in BOTH archives but are built only once,
-# into Libraries/. Copy them (preserving the SONAME alias symlinks) into the
-# SE2 staging tree. Skipped file-by-file under --only / --skip filters, when
-# the source files were not staged this run.
+# into Libraries/. Copy them into the SE2 staging tree. Skipped file-by-file
+# under --only / --skip filters, when the source files were not staged this
+# run.
 
 echo
 echo "############################################################"
 echo "# build: shared artefacts (Libraries/ -> Libraries-SE2/)"
 echo "############################################################"
 SHARED_FILES=(
-    libdxvk_d3d11.so libdxvk_d3d11.so.0
-    libdxvk_dxgi.so  libdxvk_dxgi.so.0
+    libdxvk_d3d11.so
+    libdxvk_dxgi.so
 )
 for f in "${SHARED_FILES[@]}"; do
     if [ -e "$LIBRARIES_DIR/$f" ]; then
-        cp -P "$LIBRARIES_DIR/$f" "$LIBRARIES_SE2_DIR/$f"
+        install -m 0755 "$LIBRARIES_DIR/$f" "$LIBRARIES_SE2_DIR/$f"
         echo "  copied $f"
     elif [ "$FILTERED" = "1" ]; then
         echo "  skipped $f (not staged under the active --only/--skip filter)"
@@ -235,8 +236,12 @@ done
 # ---- 8. SE2 vendor blobs (FMOD) ---------------------------------------------
 # The proprietary FMOD Engine runtime (login-gated download, committed under
 # Vendor/ like EOS and Steamworks). SE1 does not use FMOD, so it ships only
-# in the SE2 archive. The file names already carry the SONAMEs, so plain
-# copies suffice. The SE2 native wrappers are NOT here: like the SE1
+# in the SE2 archive. The committed files keep their upstream SONAME names
+# (libfmod.so.14) for provenance, but the archive carries no version-suffixed
+# filenames, so they are staged under the bare names. The binaries are NOT
+# modified: libfmodstudio's internal NEEDED entry still references
+# libfmod.so.14, so the consumer must load libfmod.so before libfmodstudio.so
+# (see docs/consuming.md). The SE2 native wrappers are NOT here: like the SE1
 # wrappers, they are built and released by CometWorks/linux-native-wrappers
 # and consumers fetch them separately.
 
@@ -244,15 +249,16 @@ echo
 echo "############################################################"
 echo "# build: SE2 vendor blobs (Vendor/ -> Libraries-SE2/)"
 echo "############################################################"
-for blob in libfmod.so.14 libfmodstudio.so.14; do
-    src="$VENDOR_DIR/$blob"
+find "$LIBRARIES_SE2_DIR" -maxdepth 1 -name 'libfmod*.so*' -delete
+for name in libfmod libfmodstudio; do
+    src="$VENDOR_DIR/$name.so.14"
     if [ ! -f "$src" ]; then
         echo "ERROR: missing vendor blob: $src" >&2
         echo "       These SDKs are proprietary and must stay committed under Vendor/." >&2
         exit 1
     fi
-    install -m 0755 "$src" "$LIBRARIES_SE2_DIR/$blob"
-    echo "  copied $blob"
+    install -m 0755 "$src" "$LIBRARIES_SE2_DIR/$name.so"
+    echo "  copied $name.so.14 -> $name.so"
 done
 
 # ---- 9. Licenses ------------------------------------------------------------
@@ -287,16 +293,16 @@ shopt -u nullglob
 
 EXPECTED_FILES=(
     # FFmpeg
-    libavcodec.so libavcodec.so.62 libavcodec.so.62.28.100
-    libavformat.so libavformat.so.62 libavformat.so.62.12.100
-    libavutil.so libavutil.so.60 libavutil.so.60.26.100
-    libswresample.so libswresample.so.6 libswresample.so.6.3.100
-    libswscale.so libswscale.so.9 libswscale.so.9.5.100
+    libavcodec.so
+    libavformat.so
+    libavutil.so
+    libswresample.so
+    libswscale.so
     # DXVK (patched, shared with the SE2 archive)
-    libdxvk_d3d11.so libdxvk_d3d11.so.0
-    libdxvk_dxgi.so  libdxvk_dxgi.so.0
+    libdxvk_d3d11.so
+    libdxvk_dxgi.so
     # OpenAL
-    libopenal.so libopenal.so.1
+    libopenal.so
     # Vendor
     libEOSSDK-Linux-Shipping.so libsteam_api.so
     # Managed
@@ -316,13 +322,13 @@ EXPECTED_FILES=(
 
 EXPECTED_FILES_SE2=(
     # DXVK (patched, identical to the SE1 archive's copy)
-    libdxvk_d3d11.so libdxvk_d3d11.so.0
-    libdxvk_dxgi.so  libdxvk_dxgi.so.0
-    # vkd3d-proton (patched, identical to the SE1 archive's copy)
+    libdxvk_d3d11.so
+    libdxvk_dxgi.so
+    # vkd3d-proton (patched)
     libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so
-    # FMOD (vendor blobs, file names carry the SONAMEs)
-    libfmod.so.14
-    libfmodstudio.so.14
+    # FMOD (vendor blobs staged under bare names)
+    libfmod.so
+    libfmodstudio.so
     # Licenses
     LICENSES/DXVK-LICENSE.txt
     LICENSES/FMOD-EULA.txt
@@ -363,13 +369,10 @@ echo "==> All expected artefacts present in $LIBRARIES_SE2_DIR"
 
 # ---- 11. package ------------------------------------------------------------
 # Each archive mirrors its staging tree exactly: every library at the archive
-# root plus a LICENSES/ subdir. Consumers extract it straight into their own
-# Libraries staging folder, so any layout change here is a breaking change
-# for them — see docs/release-archive.md.
-#
-# Symlinks are stored AS symlinks (tar's default), which is what keeps the
-# libavcodec.so -> .so.62 -> .so.62.28.100 chain intact on extraction and the
-# archives small.
+# root plus a LICENSES/ subdir, no symlinks, no version-suffixed filenames.
+# Consumers extract it straight into their own Libraries staging folder, so
+# any layout change here is a breaking change for them — see
+# docs/release-archive.md.
 
 if [ "$FILTERED" = "1" ]; then
     echo

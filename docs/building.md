@@ -144,9 +144,9 @@ exact contents and the guarantees consumers rely on.
 above says which dependency needs it.
 
 **`ERROR: expected lib not built: libavcodec.so.62`** — FFmpeg's SOVERSION
-moved, which means the pinned version changed or upstream bumped it. See
-[maintenance.md](maintenance.md); the `EXPECTED_SOVER` table and Pulsar's
-`LibraryVersionMap` have to move together.
+moved in the build tree, which means the pinned version changed or upstream
+bumped it (an ABI break for the consumers even though the shipped file names
+stay bare). See [maintenance.md](maintenance.md) for what to update.
 
 **OpenAL: `Required backend not found`** — a backend's development headers are
 missing. Install `libpulse-dev`, `libasound2-dev` and `libpipewire-0.3-dev`.

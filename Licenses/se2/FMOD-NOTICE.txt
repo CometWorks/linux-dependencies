@@ -3,8 +3,8 @@ FMOD Engine
 
 The shared libraries shipped alongside this notice as:
 
-    libfmod.so.14         (FMOD Core API runtime)
-    libfmodstudio.so.14   (FMOD Studio API runtime)
+    libfmod.so         (FMOD Core API runtime)
+    libfmodstudio.so   (FMOD Studio API runtime)
 
 are the FMOD Engine runtime, distributed by Firelight Technologies Pty Ltd.
 

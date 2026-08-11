@@ -6,8 +6,13 @@
 # Patches/dxvk/ applied first, then installs the two .so files the Space
 # Engineers clients need into the build/Libraries staging folder:
 #
-#   libdxvk_d3d11.so   (SONAME libdxvk_d3d11.so.0; we ship both via a symlink)
-#   libdxvk_dxgi.so    (SONAME libdxvk_dxgi.so.0;  same)
+#   libdxvk_d3d11.so
+#   libdxvk_dxgi.so
+#
+# The archives carry no symlinks and no version-suffixed filenames, so only
+# these two real files are staged. libdxvk_d3d11's NEEDED reference to the
+# dxgi library is rewritten from the SONAME (libdxvk_dxgi.so.0) to the bare
+# file name so DT_RUNPATH=$ORIGIN keeps resolving it next to the library.
 #
 # DXVK is built ONCE and the same patched binaries ship in both release
 # archives (SE1 and SE2) — see Patches/dxvk/README.md for what the series
@@ -72,16 +77,6 @@ STAMP_FILE="$BUILD_DIR/dxvk.stamp"
 
 EXPECTED_LIBS=(libdxvk_d3d11.so libdxvk_dxgi.so)
 
-# What the cache check must find for a rebuild to be skippable: the libraries
-# AND the SONAME aliases, because build.sh asserts on the aliases too. Checking
-# only the bare .so names would let a missing libdxvk_d3d11.so.0 report
-# "cached, skipping rebuild" and then fail the caller's assertion, recoverable
-# only by a full ~10-minute --clean rebuild.
-EXPECTED_STAGED=(
-    libdxvk_d3d11.so libdxvk_d3d11.so.0
-    libdxvk_dxgi.so  libdxvk_dxgi.so.0
-)
-
 CLEAN=0
 for arg in "$@"; do
     case "$arg" in
@@ -123,8 +118,12 @@ mkdir -p "$BUILD_DIR" "$LIBRARIES_DIR"
 # ---- cache check ------------------------------------------------------------
 
 ALL_LIBS_PRESENT=1
-for lib in "${EXPECTED_STAGED[@]}"; do
-    [ -e "$LIBRARIES_DIR/$lib" ] || ALL_LIBS_PRESENT=0
+for lib in "${EXPECTED_LIBS[@]}"; do
+    # The pre-bare-name layout staged .so.0 symlinks next to the real files;
+    # treat their presence as a cache miss so a rerun cleans them up.
+    if [ ! -e "$LIBRARIES_DIR/$lib" ] || [ -e "$LIBRARIES_DIR/${lib}.0" ]; then
+        ALL_LIBS_PRESENT=0
+    fi
 done
 
 if [ "$CLEAN" = "1" ]; then
@@ -217,20 +216,26 @@ echo "==> Running DXVK package-native.sh (64-only, no-package)"
 # (e.g. usr/lib64/, multiarch subdir) doesn't silently break the script.
 
 echo "==> Staging DXVK libs into $LIBRARIES_DIR"
+find "$LIBRARIES_DIR" -maxdepth 1 -name 'libdxvk_*.so*' -delete
 for lib in "${EXPECTED_LIBS[@]}"; do
     # `-L` so find follows the unversioned .so symlink chain to the real
     # versioned file (libdxvk_*.so -> libdxvk_*.so.0 -> libdxvk_*.so.0.<ver>).
-    # `install` then copies the dereferenced file under the bare .so name,
-    # matching the pre-existing Libraries/ layout.
+    # `install` then copies the dereferenced file under the bare .so name.
     src="$(find -L "$DXVK_OUT_DIR" -type f -name "$lib" -print -quit)"
     if [ -z "$src" ]; then
         echo "ERROR: package-native.sh did not produce $lib under $DXVK_OUT_DIR" >&2
         exit 1
     fi
     install -m 0755 "$src" "$LIBRARIES_DIR/$lib"
-    # Recreate the SONAME alias as a symlink so anything dlopen()ing the
-    # SONAME directly (rare, but matches the pre-existing layout) finds it.
-    ln -sfn "$lib" "$LIBRARIES_DIR/${lib}.0"
+done
+
+# Rewrite the cross-DXVK NEEDED entry to the bare file name: no SONAME-named
+# file ships, so the reference must match what is actually next to the
+# library. A no-op on libdxvk_dxgi.so, which has no such entry.
+echo "==> Rewriting cross-DXVK NEEDED entries to the bare names"
+for lib in "${EXPECTED_LIBS[@]}"; do
+    patchelf --replace-needed libdxvk_dxgi.so.0 libdxvk_dxgi.so \
+        "$LIBRARIES_DIR/$lib"
 done
 
 # ---- patch DT_RUNPATH=$ORIGIN onto each .so --------------------------------
