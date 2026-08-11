@@ -13,9 +13,6 @@ Files in this directory:
     DXVK-LICENSE.txt           zlib licence covering libdxvk_*.so* (built
                                with the patch series published under
                                Patches/dxvk/ of this repository)
-    VKD3D-LGPL-2.1.txt         LGPL-2.1 text covering libvkd3d-proton-*.so
-    vkd3d-proton-README.txt    Build provenance + LGPL relinking notes
-                               (patch series under Patches/vkd3d-proton/)
     OpenAL-Soft-LGPL-2.0.txt   LGPL-2.0 text covering libopenal.so*
     OpenAL-Soft-README.txt     Build provenance + LGPL relinking notes
     OpenAL-Soft-NOTICES.txt    BSD-3-Clause and PFFFT notices for the

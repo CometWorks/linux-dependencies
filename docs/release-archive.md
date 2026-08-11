@@ -13,9 +13,10 @@ linux-dependencies.tar.gz       Space Engineers 1 (Pulsar for Linux, Magnetar)
 linux-dependencies-se2.tar.gz   Space Engineers 2 (the SE2 Linux port)
 ```
 
-Both are gzip-compressed tars built by `build.sh` (roughly 27 MB and 7 MB).
-The patched DXVK and vkd3d-proton binaries are **byte-identical across the
-two archives** — they are built once and copied into both staging trees.
+Both are gzip-compressed tars built by `build.sh` (roughly 24 MB and 7 MB).
+The SE1 archive contains exactly the same library set as before the SE2
+split; its patched DXVK binaries are **byte-identical to the SE2 archive's
+copies** — built once, copied into both staging trees.
 
 Download the latest with:
 
@@ -56,8 +57,6 @@ libdxvk_d3d11.so                                      (patched, see Patches/dxvk
 libdxvk_d3d11.so.0            -> libdxvk_d3d11.so     (symlink)
 libdxvk_dxgi.so                                       (patched)
 libdxvk_dxgi.so.0             -> libdxvk_dxgi.so      (symlink)
-libvkd3d-proton-d3d12.so                              (patched, see Patches/vkd3d-proton/)
-libvkd3d-proton-d3d12core.so                          (patched)
 libEOSSDK-Linux-Shipping.so
 libsteam_api.so
 Steamworks.NET.dll
@@ -71,8 +70,6 @@ LICENSES/OpenAL-Soft-README.txt
 LICENSES/README.txt
 LICENSES/Steam-NOTICE.txt
 LICENSES/Steamworks.NET-LICENSE.txt
-LICENSES/VKD3D-LGPL-2.1.txt
-LICENSES/vkd3d-proton-README.txt
 ```
 
 ### Guarantees
@@ -104,8 +101,8 @@ libdxvk_d3d11.so              identical to the SE1 archive's copy
 libdxvk_d3d11.so.0            -> libdxvk_d3d11.so              (symlink)
 libdxvk_dxgi.so               identical to the SE1 archive's copy
 libdxvk_dxgi.so.0             -> libdxvk_dxgi.so               (symlink)
-libvkd3d-proton-d3d12.so      identical to the SE1 archive's copy
-libvkd3d-proton-d3d12core.so  identical to the SE1 archive's copy
+libvkd3d-proton-d3d12.so      patched, see Patches/vkd3d-proton/ (SE2 only)
+libvkd3d-proton-d3d12core.so  patched (SE2 only)
 libfmod.so.14                 FMOD Core API runtime (unmodified vendor blob)
 libfmodstudio.so.14           FMOD Studio API runtime (unmodified vendor blob)
 LICENSES/DXVK-LICENSE.txt
@@ -139,7 +136,6 @@ maintained forever.
 | --- | :---: | :---: |
 | FFmpeg libraries | yes | no |
 | DXVK libraries | yes | no |
-| vkd3d-proton libraries | no (shipped under the patched-in-both policy) | no |
 | OpenAL library | yes | no |
 | `Steamworks.NET.dll` | yes | yes |
 | `libsteam_api.so` | yes | yes |
@@ -149,8 +145,9 @@ maintained forever.
 The SE2 archive is consumed only by the Space Engineers 2 Linux port, which
 takes all of it. The two archives are kept separate — rather than a `se2/`
 subdirectory inside the SE1 archive — so SE1 consumers never download or
-ship the SE2-only payload (FMOD, wrappers), while every **patched** library
-(DXVK, vkd3d-proton) appears in both archives as the same bytes.
+ship SE2-only payload (vkd3d-proton, FMOD) and the SE1 archive's library
+set stays exactly what it was before the split; the DXVK files it shares
+with the SE2 archive are the same bytes in both.
 
 ## Versioning and tags
 

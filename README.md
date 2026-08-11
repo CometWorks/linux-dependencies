@@ -10,9 +10,10 @@ published release archive instead of building these libraries themselves.
 
 ## What it ships
 
-DXVK Native and vkd3d-proton are built **once**, with the patch series under
-[Patches/](Patches/) applied, and the identical binaries ship in both
-archives. FMOD ships only in the SE2 archive, because SE1 does not use it.
+The SE1 archive contains exactly the same library set as before the SE2
+split — its DXVK files are simply the patched build now, byte-identical with
+the SE2 archive's copies. Everything new with the SE2 port (vkd3d-proton,
+FMOD) ships only in the SE2 archive.
 
 ### `linux-dependencies.tar.gz` — Space Engineers 1
 
@@ -20,7 +21,6 @@ archives. FMOD ships only in the SE2 archive, because SE1 does not use it.
 | --- | --- | --- |
 | FFmpeg (`libavcodec`, `libavformat`, `libavutil`, `libswresample`, `libswscale`) | 8.1 | LGPL-2.1-or-later |
 | DXVK Native (`libdxvk_d3d11.so`, `libdxvk_dxgi.so`) + [Patches/dxvk/](Patches/dxvk/) | 2.7.1 | zlib |
-| vkd3d-proton (`libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so`) + [Patches/vkd3d-proton/](Patches/vkd3d-proton/) | pinned commit | LGPL-2.1 |
 | OpenAL Soft (`libopenal.so`) | 1.25.2 | LGPL-2.0-or-later |
 | `Steamworks.NET.dll` | pinned commit | MIT |
 | `libEOSSDK-Linux-Shipping.so` | vendor blob | proprietary (Epic) |
@@ -31,7 +31,7 @@ archives. FMOD ships only in the SE2 archive, because SE1 does not use it.
 | Artefact | Version | Licence |
 | --- | --- | --- |
 | DXVK Native — same patched build as above | 2.7.1 | zlib |
-| vkd3d-proton — same patched build as above | pinned commit | LGPL-2.1 |
+| vkd3d-proton (`libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so`) + [Patches/vkd3d-proton/](Patches/vkd3d-proton/) | pinned commit | LGPL-2.1 |
 | FMOD Engine (`libfmod.so.14`, `libfmodstudio.so.14`) | 2.03.11, matching the game | proprietary (Firelight) |
 
 Everything, plus the third-party licence texts, is published as release

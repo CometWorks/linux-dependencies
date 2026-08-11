@@ -32,7 +32,7 @@ for the PE-loader shims.
 | --- | --- | --- |
 | `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | SE1 | FFmpeg 8.1, built from the upstream release tarball |
 | `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 2.7.1 + the `Patches/dxvk/` series, built once from the upstream git tag |
-| `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | both | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series, built once |
+| `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | SE2 | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series |
 | `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
 | `Steamworks.NET.dll` | SE1 | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
@@ -42,13 +42,14 @@ for the PE-loader shims.
 
 Two policies shape the archive split:
 
-* **Patched libraries appear in both archives, built once.** DXVK and
-  vkd3d-proton carry source-level fixes (see `Patches/`); the same binaries
-  ship to SE1 and SE2 so there is exactly one build to test and no variant
-  drift.
-* **SE2-only payload stays out of the SE1 archive.** FMOD ships only in
-  `linux-dependencies-se2.tar.gz`, so SE1 consumers never download or ship
-  libraries they cannot use.
+* **The SE1 archive's library set never grows with SE2 work.** It contains
+  exactly what it did before the split. Libraries it already shipped may
+  gain source-level patches (DXVK, see `Patches/dxvk/`), and those patched
+  binaries are built once and shipped as the same bytes in both archives —
+  one build to test, no variant drift.
+* **Everything new with the SE2 port ships only in the SE2 archive.**
+  vkd3d-proton and FMOD go to `linux-dependencies-se2.tar.gz` alone, so SE1
+  consumers never download or ship libraries they cannot use.
 
 ### Out of scope — deliberately not here
 

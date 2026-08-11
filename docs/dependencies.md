@@ -5,14 +5,15 @@ pinned. To change any of these, see [maintenance.md](maintenance.md).
 
 ## Summary
 
-Every library is built (or staged) **once**; DXVK and vkd3d-proton are
-patched and the identical binaries ship in both archives.
+Every library is built (or staged) **once**. The SE1 archive keeps exactly
+its pre-SE2 library set; its DXVK files are the patched build, shared
+byte-identically with the SE2 archive.
 
 | Dependency | Archives | Version / pin | Licence | Built by |
 | --- | --- | --- | --- | --- |
 | FFmpeg | SE1 | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
 | DXVK Native + `Patches/dxvk/` series | both | tag `v2.7.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
-| vkd3d-proton + `Patches/vkd3d-proton/` series | both | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
+| vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
 | OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
 | Steamworks.NET | SE1 | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
@@ -180,11 +181,11 @@ Mechanics worth knowing:
 
 ---
 
-## vkd3d-proton (patched)
+## vkd3d-proton (patched, SE2 archive only)
 
 **Produces:** `libvkd3d-proton-d3d12.so` and `libvkd3d-proton-d3d12core.so`,
-built once with the [Patches/vkd3d-proton/](../Patches/vkd3d-proton/) series
-applied and shipped identically in both archives.
+built with the [Patches/vkd3d-proton/](../Patches/vkd3d-proton/) series
+applied and staged straight into `build/Libraries-SE2/`.
 
 **Source:** `https://github.com/HansKristian-Work/vkd3d-proton.git` at commit
 `3dfc6f07d0953b1e8b41705275c2c59cc7374fc5`, fetched by SHA (depth 1) with
@@ -193,8 +194,9 @@ than a tag because the patch series was developed and tested against exactly
 this upstream state.
 
 **Consumed by:** the Space Engineers 2 client, whose renderer is Direct3D 12
-(VRage3 Render12). It ships in the SE1 archive as well under the
-patched-libraries-appear-in-both policy; SE1 consumers simply ignore it.
+(VRage3 Render12). Space Engineers 1 is Direct3D 11 and never shipped a
+D3D12 layer, so vkd3d-proton stays out of the SE1 archive — the SE1 library
+set is unchanged from before the SE2 split.
 
 **How it is built:** a plain native meson build (`--buildtype release`),
 installed into `build/vkd3d-proton-out/` and staged from there. vkd3d-proton
@@ -209,7 +211,7 @@ fix required for `CreateSwapChainForHwnd`, and an env-gated llvmpipe FP64
 override used only by the CPU-rendering test harness) are documented in
 `Patches/vkd3d-proton/README.md`.
 
-Being LGPL-2.1, the archives carry `LICENSES/VKD3D-LGPL-2.1.txt` plus
+Being LGPL-2.1, the SE2 archive carries `LICENSES/VKD3D-LGPL-2.1.txt` plus
 `LICENSES/vkd3d-proton-README.txt` with build provenance and relinking notes
 — the same obligation pattern as FFmpeg.
 

@@ -5,15 +5,17 @@
 # over Vulkan) from upstream sources at
 # https://github.com/HansKristian-Work/vkd3d-proton, with the patch series
 # under Patches/vkd3d-proton/ applied first, then installs the two native .so
-# files the Space Engineers 2 client needs into the build/Libraries staging
-# folder:
+# files the Space Engineers 2 client needs into the build/Libraries-SE2
+# staging folder:
 #
 #   libvkd3d-proton-d3d12.so
 #   libvkd3d-proton-d3d12core.so
 #
 # The patches fix bugs the Space Engineers 2 client hits (see
-# Patches/vkd3d-proton/README.md); the patched libraries ship in BOTH release
-# archives, per the policy that a patched library appears in every archive.
+# Patches/vkd3d-proton/README.md). Unlike DXVK — which Space Engineers 1
+# already shipped and therefore stays in both archives — vkd3d-proton is new
+# with the SE2 port, so it ships in the SE2 archive only and the SE1 archive
+# keeps its pre-existing library set.
 #
 # The pin is a commit SHA rather than a tag because the patch series was
 # developed and tested against this exact upstream state.
@@ -21,7 +23,7 @@
 # Source layout (under the gitignored build/ folder of this repo):
 #
 #   build/
-#   ├── Libraries/                 staging dir all dep scripts populate
+#   ├── Libraries-SE2/             SE2 staging dir this script populates
 #   ├── vkd3d-proton/              clone at the pinned commit
 #   ├── vkd3d-proton-out/          meson install destdir (recreated)
 #   └── vkd3d-proton.stamp         last-built commit + patch-series hash
@@ -34,7 +36,7 @@
 #   VKD3D_PROTON_COMMIT = 3dfc6f07d0953b1e8b41705275c2c59cc7374fc5
 #   VKD3D_PROTON_REPO   = https://github.com/HansKristian-Work/vkd3d-proton.git
 #   BUILD_DIR           = <repo>/build
-#   LIBRARIES_DIR       = $BUILD_DIR/Libraries
+#   LIBRARIES_SE2_DIR   = $BUILD_DIR/Libraries-SE2
 #   JOBS                = $(nproc)
 #
 # Requirements: git, meson (>=0.58), ninja, glslang (glslangValidator),
@@ -53,7 +55,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR_DEFAULT="$REPO_DIR/build"
 
 BUILD_DIR="${BUILD_DIR:-$BUILD_DIR_DEFAULT}"
-LIBRARIES_DIR="${LIBRARIES_DIR:-$BUILD_DIR/Libraries}"
+LIBRARIES_SE2_DIR="${LIBRARIES_SE2_DIR:-$BUILD_DIR/Libraries-SE2}"
 JOBS="${JOBS:-$(nproc)}"
 
 PATCHES_DIR="$REPO_DIR/Patches/vkd3d-proton"
@@ -115,13 +117,13 @@ if ! command -v widl >/dev/null 2>&1 && ! command -v widl-stable >/dev/null 2>&1
     fi
 fi
 
-mkdir -p "$BUILD_DIR" "$LIBRARIES_DIR"
+mkdir -p "$BUILD_DIR" "$LIBRARIES_SE2_DIR"
 
 # ---- cache check ------------------------------------------------------------
 
 ALL_LIBS_PRESENT=1
 for lib in "${EXPECTED_LIBS[@]}"; do
-    [ -e "$LIBRARIES_DIR/$lib" ] || ALL_LIBS_PRESENT=0
+    [ -e "$LIBRARIES_SE2_DIR/$lib" ] || ALL_LIBS_PRESENT=0
 done
 
 if [ "$CLEAN" = "1" ]; then
@@ -130,8 +132,8 @@ elif [ "$ALL_LIBS_PRESENT" = "1" ] \
    && [ -f "$STAMP_FILE" ] \
    && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
     echo "==> Cached build matches vkd3d-proton ${VKD3D_PROTON_COMMIT:0:12}; skipping rebuild"
-    echo "==> vkd3d-proton libs already in $LIBRARIES_DIR:"
-    ( cd "$LIBRARIES_DIR" && ls -1 libvkd3d-proton-*.so* )
+    echo "==> vkd3d-proton libs already in $LIBRARIES_SE2_DIR:"
+    ( cd "$LIBRARIES_SE2_DIR" && ls -1 libvkd3d-proton-*.so* )
     exit 0
 fi
 
@@ -197,14 +199,14 @@ echo "==> Building vkd3d-proton (native, release)"
 
 # ---- locate + stage the .so outputs -----------------------------------------
 
-echo "==> Staging vkd3d-proton libs into $LIBRARIES_DIR"
+echo "==> Staging vkd3d-proton libs into $LIBRARIES_SE2_DIR"
 for lib in "${EXPECTED_LIBS[@]}"; do
     src="$(find -L "$OUT_DIR" -type f -name "$lib" -print -quit)"
     if [ -z "$src" ]; then
         echo "ERROR: the build did not produce $lib under $OUT_DIR" >&2
         exit 1
     fi
-    install -m 0755 "$src" "$LIBRARIES_DIR/$lib"
+    install -m 0755 "$src" "$LIBRARIES_SE2_DIR/$lib"
 done
 
 # ---- patch DT_RUNPATH=$ORIGIN onto each .so ---------------------------------
@@ -214,7 +216,7 @@ done
 
 echo "==> Patching DT_RUNPATH=\$ORIGIN onto vkd3d-proton libs"
 for lib in "${EXPECTED_LIBS[@]}"; do
-    patchelf --set-rpath '$ORIGIN' "$LIBRARIES_DIR/$lib"
+    patchelf --set-rpath '$ORIGIN' "$LIBRARIES_SE2_DIR/$lib"
 done
 
 # ---- update cache stamp -----------------------------------------------------
@@ -222,5 +224,5 @@ done
 printf '%s\n' "$STAMP_CONTENT" > "$STAMP_FILE"
 
 echo
-echo "==> Staged vkd3d-proton libs into $LIBRARIES_DIR:"
-( cd "$LIBRARIES_DIR" && ls -1 libvkd3d-proton-*.so* )
+echo "==> Staged vkd3d-proton libs into $LIBRARIES_SE2_DIR:"
+( cd "$LIBRARIES_SE2_DIR" && ls -1 libvkd3d-proton-*.so* )

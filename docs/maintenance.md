@@ -66,11 +66,11 @@ series was developed against, so treat a bump as requiring an SE2 smoke test.
 
 Add, edit or remove `Patches/<dep>/NNNN-*.patch` files; each series' hash is
 part of its dependency's cache stamp, so the next build rebuilds that
-dependency automatically. Patched libraries ship **in both archives** (built
-once, copied), so a patch change affects SE1 and SE2 consumers alike — test
-accordingly. For every patch, record in the series' README.md what it fixes
-and where it came from. Patches are applied with `git apply` in byte-wise
-filename order.
+dependency automatically. The patched DXVK ships **in both archives** (built
+once, copied), so a DXVK patch change affects SE1 and SE2 consumers alike —
+test accordingly; vkd3d-proton ships in the SE2 archive only. For every
+patch, record in the series' README.md what it fixes and where it came from.
+Patches are applied with `git apply` in byte-wise filename order.
 
 ## Bumping SDL3
 

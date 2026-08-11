@@ -22,5 +22,4 @@ Files in this directory:
 
 This is the SE2 companion archive (linux-dependencies-se2.tar.gz). The
 Space Engineers 1 libraries and their licences ship separately in
-linux-dependencies.tar.gz; the patched DXVK and vkd3d-proton binaries are
-identical in both.
+linux-dependencies.tar.gz; the patched DXVK binaries are identical in both.

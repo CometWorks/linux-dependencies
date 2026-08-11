@@ -92,8 +92,9 @@ The scripts under `Scripts/` are standalone and can be run directly:
 ./Scripts/build_ffmpeg.sh --clean
 ```
 
-They stage into the same `build/Libraries/` folder. This is usually the fastest
-way to iterate on one dependency.
+They stage into the same `build/Libraries/` folder (`build_vkd3d_proton.sh`
+into `build/Libraries-SE2/`, since it ships in the SE2 archive only). This is
+usually the fastest way to iterate on one dependency.
 
 ## Caching
 

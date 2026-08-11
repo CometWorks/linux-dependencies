@@ -3,9 +3,9 @@
 Patches in this directory are applied on top of the pinned upstream
 vkd3d-proton commit (see `VKD3D_PROTON_COMMIT` in
 [Scripts/build_vkd3d_proton.sh](../../Scripts/build_vkd3d_proton.sh)) before
-building `libvkd3d-proton-d3d12.so` / `libvkd3d-proton-d3d12core.so`.
-vkd3d-proton is built **once** with the series applied, and the same binaries
-ship in both release archives (SE1 and SE2).
+building `libvkd3d-proton-d3d12.so` / `libvkd3d-proton-d3d12core.so`, which
+ship in the **SE2 archive only** — Space Engineers 1 never shipped a D3D12
+layer, and the SE1 archive's library set stays as it was.
 
 The application rules are the same as for [Patches/dxvk/](../dxvk/README.md):
 `*.patch` files applied with `git apply` in byte-wise filename order, series
@@ -24,7 +24,7 @@ upstream commit `3dfc6f07d0953b1` — the reason the pin is that commit.
 
 ## Licensing
 
-vkd3d-proton is LGPL-2.1-licensed. The archives ship
+vkd3d-proton is LGPL-2.1-licensed. The SE2 archive ships
 `LICENSES/VKD3D-LGPL-2.1.txt` and `LICENSES/vkd3d-proton-README.txt` (build
 provenance and relinking notes) alongside the binaries, and this directory
 (published with the repo) is the corresponding source of the modifications.

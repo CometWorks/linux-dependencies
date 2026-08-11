@@ -6,13 +6,14 @@ name: Build
 # tar.gz release assets:
 #
 #   * linux-dependencies.tar.gz      Space Engineers 1 — consumed by Pulsar
-#                                    for Linux and Magnetar.
+#                                    for Linux and Magnetar. Same library set
+#                                    as before the SE2 split.
 #   * linux-dependencies-se2.tar.gz  Space Engineers 2 — the same patched
-#                                    DXVK + vkd3d-proton builds plus the FMOD
-#                                    runtime.
+#                                    DXVK build plus vkd3d-proton and the
+#                                    FMOD runtime.
 #
-# DXVK and vkd3d-proton are built once with their Patches/ series applied;
-# the identical binaries ship in both archives.
+# DXVK is built once with its Patches/ series applied; the identical
+# binaries ship in both archives. vkd3d-proton is SE2-only.
 #
 #   * push to main        -> build, then publish a PUBLIC release tagged
 #                            v1.0.<run_number> and marked "latest".

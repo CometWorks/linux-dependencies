@@ -10,10 +10,11 @@
 #   dist/linux-dependencies.tar.gz       SE1 (Pulsar for Linux, Magnetar)
 #   dist/linux-dependencies-se2.tar.gz   SE2 (Space Engineers 2 Linux port)
 #
-# DXVK and vkd3d-proton are built with their patch series applied (see
-# Patches/) and the SAME binaries ship in both archives — a patched library
-# appears in every archive, and nothing is built twice. FMOD and the SE2
-# native wrappers ship only in the SE2 archive, because SE1 does not use them.
+# The SE1 archive contains exactly the same library set as before the SE2
+# split — no additions. Its DXVK files are the patched build (Patches/dxvk/),
+# shared byte-identically with the SE2 archive, and nothing is built twice.
+# Everything new with the SE2 port (vkd3d-proton, FMOD) ships in the SE2
+# archive only.
 #
 # Pipeline (in order):
 #
@@ -21,19 +22,18 @@
 #   2. Scripts/build_dxvk.sh            DXVK Native v2.7.1 + Patches/dxvk/
 #                                       (libdxvk_d3d11.so + libdxvk_dxgi.so + .0 links)
 #   3. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
-#                                       Patches/vkd3d-proton/
-#                                       (libvkd3d-proton-d3d12.so + -d3d12core.so)
+#                                       Patches/vkd3d-proton/, staged straight
+#                                       into Libraries-SE2/
 #   4. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so*)
 #   5. Scripts/build_steamworks_net.sh  Steamworks.NET.dll
-#   6. Shared-artefact copy:            the patched DXVK + vkd3d-proton files
-#                                       from Libraries/ into Libraries-SE2/
+#   6. Shared-artefact copy:            the patched DXVK files from
+#                                       Libraries/ into Libraries-SE2/
 #   7. Vendor copy:                     libEOSSDK-Linux-Shipping.so + libsteam_api.so
 #                                       (proprietary, committed under Vendor/)
 #   8. SE2 vendor copy:                 the FMOD runtime (libfmod.so.14 +
 #                                       libfmodstudio.so.14) from Vendor/
 #   9. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
-#                                       DXVK + vkd3d + Licenses/se2/*.txt
-#                                       -> LICENSES/ (SE2)
+#                                       DXVK + Licenses/se2/*.txt -> LICENSES/ (SE2)
 #  10. Final assertion:                 every expected artefact is present
 #  11. Package:                         both archives under dist/
 #
@@ -189,11 +189,11 @@ run_step vkd3d-proton   "$SCRIPTS_DIR/build_vkd3d_proton.sh"
 run_step openal         "$SCRIPTS_DIR/build_openal.sh"
 run_step steamworks-net "$SCRIPTS_DIR/build_steamworks_net.sh"
 
-# ---- 6. shared artefacts: patched libs -> Libraries-SE2/ --------------------
-# The patched DXVK and vkd3d-proton libraries ship in BOTH archives but are
-# built only once, into Libraries/. Copy them (preserving the SONAME alias
-# symlinks) into the SE2 staging tree. Skipped file-by-file under --only /
-# --skip filters, when the source files were not staged this run.
+# ---- 6. shared artefacts: patched DXVK -> Libraries-SE2/ --------------------
+# The patched DXVK libraries ship in BOTH archives but are built only once,
+# into Libraries/. Copy them (preserving the SONAME alias symlinks) into the
+# SE2 staging tree. Skipped file-by-file under --only / --skip filters, when
+# the source files were not staged this run.
 
 echo
 echo "############################################################"
@@ -202,7 +202,6 @@ echo "############################################################"
 SHARED_FILES=(
     libdxvk_d3d11.so libdxvk_d3d11.so.0
     libdxvk_dxgi.so  libdxvk_dxgi.so.0
-    libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so
 )
 for f in "${SHARED_FILES[@]}"; do
     if [ -e "$LIBRARIES_DIR/$f" ]; then
@@ -258,9 +257,8 @@ done
 
 # ---- 9. Licenses ------------------------------------------------------------
 # SE1 archive: every top-level Licenses/*.txt. SE2 archive: the shared DXVK
-# and vkd3d-proton notices plus the SE2-specific ones under Licenses/se2/
-# (kept in a subdirectory precisely so the SE1 glob below does not pick
-# them up).
+# licence plus the SE2-specific notices under Licenses/se2/ (kept in a
+# subdirectory precisely so the SE1 glob below does not pick them up).
 
 echo
 echo "############################################################"
@@ -271,11 +269,9 @@ for f in "$LICENSES_SRC"/*.txt; do
     install -m 0644 "$f" "$LIBRARIES_DIR/LICENSES/$(basename "$f")"
     echo "  copied $(basename "$f")"
 done
-for shared in DXVK-LICENSE.txt VKD3D-LGPL-2.1.txt vkd3d-proton-README.txt; do
-    install -m 0644 "$LICENSES_SRC/$shared" \
-        "$LIBRARIES_SE2_DIR/LICENSES/$shared"
-    echo "  copied $shared (SE2)"
-done
+install -m 0644 "$LICENSES_SRC/DXVK-LICENSE.txt" \
+    "$LIBRARIES_SE2_DIR/LICENSES/DXVK-LICENSE.txt"
+echo "  copied DXVK-LICENSE.txt (SE2)"
 for f in "$LICENSES_SRC"/se2/*.txt; do
     install -m 0644 "$f" "$LIBRARIES_SE2_DIR/LICENSES/$(basename "$f")"
     echo "  copied $(basename "$f") (SE2)"
@@ -299,8 +295,6 @@ EXPECTED_FILES=(
     # DXVK (patched, shared with the SE2 archive)
     libdxvk_d3d11.so libdxvk_d3d11.so.0
     libdxvk_dxgi.so  libdxvk_dxgi.so.0
-    # vkd3d-proton (patched, shared with the SE2 archive)
-    libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so
     # OpenAL
     libopenal.so libopenal.so.1
     # Vendor
@@ -318,8 +312,6 @@ EXPECTED_FILES=(
     LICENSES/README.txt
     LICENSES/Steam-NOTICE.txt
     LICENSES/Steamworks.NET-LICENSE.txt
-    LICENSES/VKD3D-LGPL-2.1.txt
-    LICENSES/vkd3d-proton-README.txt
 )
 
 EXPECTED_FILES_SE2=(
