@@ -28,20 +28,38 @@ for the PE-loader shims.
 
 ### In scope — built or shipped here
 
-| Artefact | Origin |
-| --- | --- |
-| `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | FFmpeg 8.1, built from the upstream release tarball |
-| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | DXVK Native 2.7.1, built from the upstream git tag |
-| `libopenal.so` | OpenAL Soft 1.25.2, built from the upstream release tarball |
-| `Steamworks.NET.dll` | Built from a pinned commit of rlabrecque/Steamworks.NET |
-| `libEOSSDK-Linux-Shipping.so` | Proprietary Epic blob, committed under `Vendor/` |
-| `libsteam_api.so` | Proprietary Valve blob, committed under `Vendor/` |
-| `LICENSES/*.txt` | Third-party licence texts and attribution, committed under `Licenses/` |
+| Artefact | Archives | Origin |
+| --- | --- | --- |
+| `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | SE1 | FFmpeg 8.1, built from the upstream release tarball |
+| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 2.7.1 + the `Patches/dxvk/` series, built once from the upstream git tag |
+| `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | SE2 | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series |
+| `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
+| `Steamworks.NET.dll` | Steam | Built from a pinned commit of rlabrecque/Steamworks.NET |
+| `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
+| `libsteam_api.so` | Steam | Proprietary Valve blob, committed under `Vendor/` |
+| `libfmod.so`, `libfmodstudio.so` | SE2 | Proprietary Firelight blobs, committed under `Vendor/` |
+| `LICENSES/*.txt` | all | Third-party licence texts and attribution, committed under `Licenses/` |
+
+Three policies shape the archive split:
+
+* **Patched libraries are built once and shipped as the same bytes
+  everywhere they appear.** DXVK (see `Patches/dxvk/`) ships identically in
+  the SE1 and SE2 archives — one build to test, no variant drift.
+* **Everything new with the SE2 port ships only in the SE2 archive.**
+  vkd3d-proton and FMOD go to `se2-dependencies.tar.gz` alone, so SE1
+  consumers never download or ship libraries they cannot use.
+* **The Steam bits ship in their own archive.** `Steamworks.NET.dll` and
+  `libsteam_api.so` belong together (the managed binding and its native
+  runtime) and are game-agnostic, so `steam-dependencies.tar.gz` is
+  consumed alongside either game archive and a Steamworks update republishes
+  neither game payload.
 
 ### Out of scope — deliberately not here
 
-**The native wrapper libraries** (`libD3DCompiler.so`, `libHavok.so`,
-`libRecastDetour.so`, `libVRageNative.so`) are built and released by
+**The native wrapper libraries** — SE1's PE-loader shims
+(`libD3DCompiler.so`, `libHavok.so`, `libRecastDetour.so`,
+`libVRageNative.so`) and SE2's `libVRage.*.Native.so` set — are built and
+released by
 [CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
 Consumers fetch that release directly, in addition to this one.
 
@@ -57,9 +75,13 @@ releases, a wrapper fix reaches consumers as soon as its own CI is green.
   CometWorks/linux-dependencies            CometWorks/linux-native-wrappers
   (this repo)                              (PE-loader shims)
         |                                             |
-        | release asset:                              | release asset:
-        | linux-dependencies.tar.gz                   | linux-native-wrappers.tar.gz
-        |                                             |
+        | release assets:                             | release asset:
+        | se1-dependencies.tar.gz                     | linux-native-wrappers.tar.gz
+        | se2-dependencies.tar.gz                     |
+        | steam-dependencies.tar.gz                   |
+        | (the SE2 asset is consumed by the SE2       |
+        |  port, not shown below; the Steam asset     |
+        |  is consumed by all of them)                |
         +---------------------+-----------------------+
                               |
                  fetched at build time by
@@ -104,14 +126,17 @@ a `DllNotFoundException` inside Space Engineers three repos downstream.
 ### `DT_RUNPATH=$ORIGIN` on every native library
 
 The shipped libraries reference each other (`libavformat` needs
-`libavcodec.so.62`, which needs `libavutil.so.60`). Without an rpath, glibc
-resolves those through the system search path, which does not include the
+`libavcodec`, which needs `libavutil`). Without an rpath, glibc resolves
+those through the system search path, which does not include the
 executable's own directory — so they would either fail to load or, worse,
 silently bind to a different-ABI FFmpeg from the host's `ld.so.cache`.
 
-Baking `$ORIGIN` into `DT_RUNPATH` makes each library find its siblings next to
-itself, which means the consumer's launcher does not have to manipulate
-`LD_LIBRARY_PATH` at all.
+Baking `$ORIGIN` into `DT_RUNPATH` makes each library find its siblings next
+to itself, which means the consumer's launcher does not have to manipulate
+`LD_LIBRARY_PATH` at all. Because the archives carry only bare, unversioned
+file names, the built libraries' intra-bundle `NEEDED` entries are rewritten
+to those bare names at staging time — otherwise they would ask the loader
+for SONAME-named files that no longer ship.
 
 ### FFmpeg is built with almost everything disabled
 
@@ -123,7 +148,7 @@ the `ldd` allow-list in `build_ffmpeg.sh` is what keeps it that way. See
 
 ### The proprietary blobs are committed, not downloaded
 
-EOS and Steamworks have no public source and no publicly fetchable binary — the
-downloads sit behind logged-in partner portals. Committing the two `.so` files
-under `Vendor/` is the only practical option; see
+EOS, Steamworks and FMOD have no public source and no publicly fetchable
+binary — the downloads sit behind logged-in partner portals. Committing the
+`.so` files under `Vendor/` is the only practical option; see
 [Vendor/README.md](../Vendor/README.md) for their provenance and licensing.

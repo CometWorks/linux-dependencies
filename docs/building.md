@@ -10,7 +10,7 @@ opening a pull request.
 On Debian / Ubuntu:
 
 ```bash
-sudo apt install build-essential pkg-config make cmake curl tar git nasm patchelf binutils zlib1g-dev meson ninja-build glslang-tools libvulkan-dev libpulse-dev libasound2-dev libpipewire-0.3-dev
+sudo apt install build-essential pkg-config make cmake curl tar git nasm patchelf binutils zlib1g-dev meson ninja-build glslang-tools libvulkan-dev mingw-w64-tools libpulse-dev libasound2-dev libpipewire-0.3-dev
 ```
 
 You also need the **.NET SDK** (8.0 or newer, with the `net8.0` targeting pack)
@@ -22,7 +22,8 @@ What each group is for:
 | Tools | Needed by |
 | --- | --- |
 | `build-essential`, `pkg-config`, `make`, `nasm`, `zlib1g-dev` | FFmpeg (`nasm` provides the x86 SIMD assembler; `yasm` also works) |
-| `meson`, `ninja-build`, `glslang-tools`, `libvulkan-dev` | DXVK Native |
+| `meson`, `ninja-build`, `glslang-tools`, `libvulkan-dev` | DXVK Native and vkd3d-proton |
+| `mingw-w64-tools` | `widl`, the Wine IDL compiler vkd3d-proton generates its COM headers with (`wine64-tools` works too; the build script shims whichever name is found) |
 | `cmake` | the pinned SDL3 that DXVK compiles against, and OpenAL Soft |
 | `libpulse-dev`, `libasound2-dev`, `libpipewire-0.3-dev` | OpenAL's audio backends — see below |
 | `patchelf`, `binutils` | `DT_RUNPATH=$ORIGIN` patching and the `readelf` verification |
@@ -39,8 +40,11 @@ for.
 ./build.sh
 ```
 
-Builds every dependency, stages `build/Libraries/`, verifies the staged tree,
-and packages `dist/linux-dependencies.tar.gz`.
+Builds every dependency once, stages `build/Libraries/` (SE1),
+`build/Libraries-SE2/` (SE2) and `build/Libraries-Steam/` (Steam), verifies
+the staged trees, and packages `dist/se1-dependencies.tar.gz`,
+`dist/se2-dependencies.tar.gz` and `dist/steam-dependencies.tar.gz`. The
+patched DXVK binaries are copied into the SE2 tree rather than rebuilt.
 
 A cold first run takes roughly 10–20 minutes, dominated by FFmpeg and DXVK.
 Subsequent runs are near-instant when nothing changed — see
@@ -52,7 +56,7 @@ Subsequent runs are near-instant when nothing changed — see
 | --- | --- |
 | `--clean` | Passes `--clean` to every sub-build: wipes cached source and build trees and rebuilds from scratch |
 | `--no-package` | Stages `build/Libraries/` but skips the tarball |
-| `--only=ffmpeg,dxvk` | Runs only the listed sub-builds. Valid names: `ffmpeg`, `dxvk`, `openal`, `steamworks-net`. An unknown name is rejected rather than silently skipping everything |
+| `--only=ffmpeg,dxvk` | Runs only the listed sub-builds. Valid names: `ffmpeg`, `dxvk`, `vkd3d-proton`, `openal`, `steamworks-net`. An unknown name is rejected rather than silently skipping everything |
 | `--skip=dxvk` | Runs every sub-build except the listed ones |
 | `-h`, `--help` | Prints the header comment |
 
@@ -70,6 +74,8 @@ packaging is skipped.
 | `REPO_DIR` | directory containing `build.sh` |
 | `BUILD_DIR` | `$REPO_DIR/build` |
 | `LIBRARIES_DIR` | `$BUILD_DIR/Libraries` |
+| `LIBRARIES_SE2_DIR` | `$BUILD_DIR/Libraries-SE2` |
+| `LIBRARIES_STEAM_DIR` | `$BUILD_DIR/Libraries-Steam` |
 | `OUTPUT_DIR` | `$REPO_DIR/dist` |
 | `VENDOR_DIR` | `$REPO_DIR/Vendor` |
 | `LICENSES_SRC` | `$REPO_DIR/Licenses` |
@@ -87,8 +93,10 @@ The scripts under `Scripts/` are standalone and can be run directly:
 ./Scripts/build_ffmpeg.sh --clean
 ```
 
-They stage into the same `build/Libraries/` folder. This is usually the fastest
-way to iterate on one dependency.
+They stage into the same `build/Libraries/` folder (`build_vkd3d_proton.sh`
+into `build/Libraries-SE2/` and `build_steamworks_net.sh` into
+`build/Libraries-Steam/`, matching the archive each ships in). This is
+usually the fastest way to iterate on one dependency.
 
 ## Caching
 
@@ -98,7 +106,8 @@ rerun does no work:
 | Dependency | Cache | Invalidated by |
 | --- | --- | --- |
 | FFmpeg | `build/ffmpeg-8.1.tar.xz` (download), `build/ffmpeg-8.1/` (source), `build/ffmpeg-8.1/_build/` (objects) | A changed `configure` flag set, tracked by a hash in `_build/.configure_flags`; otherwise an incremental `make` |
-| DXVK | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` |
+| DXVK | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` **or** any change to the `Patches/dxvk/*.patch` series (its SHA-256 is part of the stamp) |
+| vkd3d-proton | `build/vkd3d-proton/` (clone), `build/vkd3d-proton.stamp` | A changed `VKD3D_PROTON_COMMIT` **or** any change to the `Patches/vkd3d-proton/*.patch` series |
 | SDL3 | `build/SDL/` (clone), `build/sdl3-prefix/`, `build/sdl3.stamp` | A changed `SDL3_VERSION` |
 | OpenAL | `build/openal-soft-1.25.2.tar.bz2`, `build/openal-soft-1.25.2/`, `build/openal.stamp` | A changed `OPENAL_VERSION` |
 | Steamworks.NET | `build/Steamworks.NET/` (clone), `build/steamworks-net.stamp` | A changed `STEAMWORKS_NET_COMMIT` |
@@ -111,6 +120,7 @@ To force specific work:
 
 ```bash
 rm build/dxvk.stamp                # rebuild DXVK only
+rm build/vkd3d-proton.stamp        # rebuild vkd3d-proton only
 rm -rf build/ffmpeg-8.1            # re-extract and reconfigure FFmpeg
 rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball
 ./build.sh --clean                 # rebuild everything from scratch
@@ -121,13 +131,16 @@ rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball
 After a successful run:
 
 ```
-build/Libraries/           staged tree (what the archive mirrors)
-dist/linux-dependencies.tar.gz   the release archive
+build/Libraries/                 staged SE1 tree (what the SE1 archive mirrors)
+build/Libraries-SE2/             staged SE2 tree
+build/Libraries-Steam/           staged Steam tree
+dist/se1-dependencies.tar.gz     the SE1 release archive
+dist/se2-dependencies.tar.gz     the SE2 release archive
+dist/steam-dependencies.tar.gz   the Steam release archive
 ```
 
-Both directories are gitignored. See
-[release-archive.md](release-archive.md) for the exact contents and the
-guarantees consumers rely on.
+All of it is gitignored. See [release-archive.md](release-archive.md) for the
+exact contents and the guarantees consumers rely on.
 
 ## Troubleshooting
 
@@ -135,9 +148,9 @@ guarantees consumers rely on.
 above says which dependency needs it.
 
 **`ERROR: expected lib not built: libavcodec.so.62`** — FFmpeg's SOVERSION
-moved, which means the pinned version changed or upstream bumped it. See
-[maintenance.md](maintenance.md); the `EXPECTED_SOVER` table and Pulsar's
-`LibraryVersionMap` have to move together.
+moved in the build tree, which means the pinned version changed or upstream
+bumped it (an ABI break for the consumers even though the shipped file names
+stay bare). See [maintenance.md](maintenance.md) for what to update.
 
 **OpenAL: `Required backend not found`** — a backend's development headers are
 missing. Install `libpulse-dev`, `libasound2-dev` and `libpipewire-0.3-dev`.
@@ -157,6 +170,15 @@ real versioned file, not a symlink.
 not produce everything `build.sh` expects. The lines above it name each missing
 file.
 
-**`ERROR: missing vendor blob:`** — `Vendor/libEOSSDK-Linux-Shipping.so` or
-`Vendor/libsteam_api.so` is absent. These are committed; a fresh clone has
-them, so this usually means a partial checkout.
+**`ERROR: missing vendor blob:`** — a blob under `Vendor/` is absent. These
+are committed; a fresh clone has them, so this usually means a partial
+checkout.
+
+**`ERROR: patch failed to apply:`** — a patch under `Patches/dxvk/` or
+`Patches/vkd3d-proton/` no longer applies to the pinned upstream version,
+usually after a version bump. Rebase the series; see
+[maintenance.md](maintenance.md#bumping-dxvk).
+
+**`ERROR: widl (Wine IDL compiler) not found in PATH.`** — install
+`mingw-w64-tools` (Debian/Ubuntu) or `wine64-tools`; vkd3d-proton needs it
+to generate its COM headers.

@@ -1,18 +1,24 @@
 # Dependencies
 
-Every library in the release archive, where it comes from, and how it is
+Every library in the release archives, where it comes from, and how it is
 pinned. To change any of these, see [maintenance.md](maintenance.md).
 
 ## Summary
 
-| Dependency | Version / pin | Licence | Built by |
-| --- | --- | --- | --- |
-| FFmpeg | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
-| DXVK Native | tag `v2.7.1` | zlib | `Scripts/build_dxvk.sh` |
-| OpenAL Soft | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
-| Steamworks.NET | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
-| EOS SDK | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
-| Steamworks SDK | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
+Every library is built (or staged) **once**. The SE1 archive keeps exactly
+its pre-SE2 library set; its DXVK files are the patched build, shared
+byte-identically with the SE2 archive.
+
+| Dependency | Archives | Version / pin | Licence | Built by |
+| --- | --- | --- | --- | --- |
+| FFmpeg | SE1 | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
+| DXVK Native + `Patches/dxvk/` series | both | tag `v2.7.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
+| vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
+| OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
+| Steamworks.NET | Steam | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
+| EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
+| Steamworks SDK | Steam | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
+| FMOD Engine | SE2 | vendor blob (manual), 2.03.11 to match the game | proprietary (Firelight) | committed under `Vendor/` |
 
 `Scripts/build_sdl3.sh` builds SDL3 3.4.12 as well, but nothing from it is
 shipped — it exists only so DXVK has headers to compile against. See
@@ -22,19 +28,22 @@ shipped — it exists only so DXVK has headers to compile against. See
 
 ## FFmpeg 8.1
 
-**Produces:** `libavcodec.so.62`, `libavformat.so.62`, `libavutil.so.60`,
-`libswresample.so.6`, `libswscale.so.9`, each with an unversioned `.so` alias
-and a fully-versioned real file.
+**Produces:** `libavcodec.so`, `libavformat.so`, `libavutil.so`,
+`libswresample.so`, `libswscale.so` — one real file each under the bare
+name (the archives carry no symlinks and no version-suffixed filenames).
+The SONAMEs inside the binaries stay as upstream produced them
+(`libavcodec.so.62`, …), but the cross-FFmpeg `NEEDED` entries are rewritten
+to the bare names at staging time so `DT_RUNPATH=$ORIGIN` resolves siblings
+against the files actually shipped.
 
 **Source:** `https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz`, downloaded and
 cached under `build/`.
 
-**Consumed by:** Pulsar's audio and video playback, through FFmpeg.AutoGen 8.1.
-The SOVERSIONs are not incidental — `ClientPlugin/Audio/MySdlAudioInterop.cs`
-in Pulsar contains a `LibraryVersionMap` that names them explicitly, so a
-SOVERSION bump on either side without the other produces a
-`DllNotFoundException` at runtime. `build_ffmpeg.sh` has an `EXPECTED_SOVER`
-table that fails the build if the versions shift.
+**Consumed by:** Pulsar's audio and video playback, through FFmpeg.AutoGen 8.1,
+loading the libraries by their bare file names. The upstream SOVERSIONs are
+still pinned: `build_ffmpeg.sh` has an `EXPECTED_SOVER` table that fails the
+build if they shift, because a shift means an upstream ABI bump that the
+consumers' FFmpeg.AutoGen version must match.
 
 ### Why the build is configured the way it is
 
@@ -94,17 +103,21 @@ pointer accurate.
 
 ---
 
-## DXVK Native 2.7.1
+## DXVK Native 2.7.1 (patched)
 
-**Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so`, each with a `.so.0`
-SONAME symlink.
+**Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so` (bare names, no
+SONAME symlinks; `libdxvk_d3d11`'s `NEEDED` reference to the dxgi library is
+rewritten from the SONAME to the bare name), built once with the
+[Patches/dxvk/](../Patches/dxvk/) series applied and shipped identically in
+both archives.
 
 **Source:** `https://github.com/doitsujin/dxvk.git` at tag `v2.7.1`, shallow
 clone with submodules, cached under `build/dxvk/`.
 
-**Consumed by:** Pulsar only. Magnetar is headless and does not need a D3D11
-implementation. (The archive is shared, so Magnetar simply ignores these two
-files — see [consuming.md](consuming.md).)
+**Consumed by:** Pulsar and the Space Engineers 2 Linux port. Magnetar is
+headless and does not need a D3D11 implementation. (The SE1 archive is
+shared, so Magnetar simply ignores these files — see
+[consuming.md](consuming.md).)
 
 **How it is built:** by shelling out to upstream's own `package-native.sh`
 helper with `--64-only --no-package`, rather than re-implementing the meson
@@ -147,14 +160,73 @@ Both choices were verified to be neutral: DXVK built against the pinned,
 console-only 3.4.12 is byte-identical to DXVK built against a full system
 SDL3 3.5.0.
 
-**Caching:** `build/dxvk.stamp` records the built version. A rerun with the
-same `DXVK_VERSION` and all outputs present skips the build entirely.
+### The patch series
+
+The series under [Patches/dxvk/](../Patches/dxvk/) is applied onto the
+pristine tag before every build. The patches are source-level fixes for DXVK
+bugs the Space Engineers clients hit; fixing them here replaces what would
+otherwise be a much larger set of managed (Harmony) runtime patches in the
+Linux compatibility layers. The rationale for each patch is documented in
+`Patches/dxvk/README.md` alongside its provenance. The most important one
+makes `WCHAR` 16-bit (the Windows ABI) so `IDXGIAdapter::GetDesc*` cannot
+overrun the caller's Windows-layout buffers.
+
+Mechanics worth knowing:
+
+* **Pristine base every run.** The cached clone is reset
+  (`git checkout -- .` + `git clean -fdx`, including submodules) before the
+  series is applied, so patches never stack across runs. This forfeits ninja
+  incrementality — the price of a guaranteed clean base.
+* **The series is part of the cache key.** `build/dxvk.stamp` records
+  `<version> patches=<sha256 of the series>`, so adding, editing or removing
+  a patch triggers a rebuild. An empty series is valid and builds pristine
+  upstream.
+* **A patch that fails to apply fails the build**, naming the patch — the
+  signal that a `DXVK_VERSION` bump needs the series rebased.
+
+---
+
+## vkd3d-proton (patched, SE2 archive only)
+
+**Produces:** `libvkd3d-proton-d3d12.so` and `libvkd3d-proton-d3d12core.so`,
+built with the [Patches/vkd3d-proton/](../Patches/vkd3d-proton/) series
+applied and staged straight into `build/Libraries-SE2/`.
+
+**Source:** `https://github.com/HansKristian-Work/vkd3d-proton.git` at commit
+`3dfc6f07d0953b1e8b41705275c2c59cc7374fc5`, fetched by SHA (depth 1) with
+submodules, cached under `build/vkd3d-proton/`. The pin is a commit rather
+than a tag because the patch series was developed and tested against exactly
+this upstream state.
+
+**Consumed by:** the Space Engineers 2 client, whose renderer is Direct3D 12
+(VRage3 Render12). Space Engineers 1 is Direct3D 11 and never shipped a
+D3D12 layer, so vkd3d-proton stays out of the SE1 archive — the SE1 library
+set is unchanged from before the SE2 split.
+
+**How it is built:** a plain native meson build (`--buildtype release`),
+installed into `build/vkd3d-proton-out/` and staged from there. vkd3d-proton
+generates its COM headers with `widl` (the Wine IDL compiler); the build
+script accepts `widl`, `widl-stable`, or Ubuntu's
+`x86_64-w64-mingw32-widl` from the `mingw-w64-tools` package, shimming the
+latter onto `PATH` under the name meson expects.
+
+The patch series, cache stamp, pristine-reset and failure behaviour follow
+the same rules as DXVK above; the patches themselves (a DXGI adapter-parent
+fix required for `CreateSwapChainForHwnd`, and an env-gated llvmpipe FP64
+override used only by the CPU-rendering test harness) are documented in
+`Patches/vkd3d-proton/README.md`.
+
+Being LGPL-2.1, the SE2 archive carries `LICENSES/VKD3D-LGPL-2.1.txt` plus
+`LICENSES/vkd3d-proton-README.txt` with build provenance and relinking notes
+— the same obligation pattern as FFmpeg.
 
 ---
 
 ## OpenAL Soft 1.25.2
 
-**Produces:** `libopenal.so.1`, with an unversioned `libopenal.so` alias.
+**Produces:** `libopenal.so` — the real file under the bare name. The SONAME
+inside the binary remains `libopenal.so.1` (asserted at build time) but no
+file is named after it; consumers load the library by file name.
 
 **Source:** `https://openal-soft.org/openal-releases/openal-soft-1.25.2.tar.bz2`,
 downloaded and cached under `build/`. A tarball URL is mutable, so unlike the
@@ -162,8 +234,8 @@ git-tag clones elsewhere the pin here is a SHA-256 checksum, verified on every
 run.
 
 **Consumed by:** Pulsar only. Space Engineers' Linux audio goes through
-Silk.NET.OpenAL (used by se-linux-compat), which dlopens `libopenal.so.1` at
-runtime. Magnetar is headless and does not stage it.
+Silk.NET.OpenAL (used by se-linux-compat), loading the bundled `libopenal.so`
+by file name. Magnetar is headless and does not stage it.
 
 **Why it lives here.** It used to be handled three different ways depending on
 the bundle: compiled from source inside Pulsar's Flatpak manifest, and left to
@@ -198,16 +270,19 @@ hard-requires that specific audio stack.
 
 ### Post-build verification
 
-The **SONAME is asserted** to be `libopenal.so.1`. Silk.NET dlopens by SONAME,
-so a bump would leave the bundled copy unused while the application silently
-fell back to the host's — or found none at all. `DT_RUNPATH=$ORIGIN` is patched
-on and re-checked, as for FFmpeg and DXVK.
+The **SONAME is asserted** to be `libopenal.so.1`. The shipped file is the
+bare `libopenal.so` either way, but a SONAME bump signals an upstream
+major-version (ABI) change that the consumers should review rather than pick
+up silently. `DT_RUNPATH=$ORIGIN` is patched on and re-checked, as for
+FFmpeg and DXVK.
 
 ---
 
 ## Steamworks.NET
 
-**Produces:** `Steamworks.NET.dll` (managed, `net8.0`).
+**Produces:** `Steamworks.NET.dll` (managed, `net8.0`), staged into
+`build/Libraries-Steam/` and shipped in the Steam archive next to
+`libsteam_api.so`, the native runtime it P/Invokes.
 
 **Source:** `https://github.com/rlabrecque/Steamworks.NET.git` at commit
 `68e72a49caf03a07722d4d4b471bbc7c0785f80b`, built from
@@ -239,12 +314,30 @@ Two proprietary runtimes are committed under `Vendor/` rather than built:
   Needed by both consumers: Pulsar for the client's EOS integration, and
   Magnetar because `MySteamService.UpdateNetworkThread` drives
   `MyEOSNetworking` even under Steam-only networking.
-* **`libsteam_api.so`** — the Steamworks SDK runtime.
+* **`libsteam_api.so`** — the Steamworks SDK runtime, shipped in the Steam
+  archive next to `Steamworks.NET.dll`.
 
 Neither has a public source repository or a publicly fetchable binary; both
 downloads are gated behind logged-in partner portals. Updating them is a manual
 maintainer task documented in [maintenance.md](maintenance.md) and in
 [Vendor/README.md](../Vendor/README.md).
+
+A third proprietary runtime ships in the SE2 archive only:
+
+* **`libfmod.so`, `libfmodstudio.so`** — the FMOD Engine runtime
+  (Core + Studio), version **2.03.11** to match the FMOD the game ships.
+  Committed under `Vendor/` with the upstream SONAME file names
+  (`libfmod.so.14`) for provenance, staged into the archive under the bare
+  names, binaries unmodified. The FMOD API is version-locked: SE2's managed
+  wrapper is generated for the game's FMOD version, so these must track it
+  at least to the minor release. SE1 does not use FMOD.
+
+Provenance and update rules: [Vendor/README.md](../Vendor/README.md).
+
+The SE2 native wrappers (`libVRage.*.Native.so`) are **not** shipped here —
+like the SE1 PE-loader wrappers, they are built and released by
+[CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers)
+and consumers fetch them separately.
 
 ---
 

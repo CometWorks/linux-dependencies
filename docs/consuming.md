@@ -1,11 +1,16 @@
 # Consuming the release
 
 Both [Pulsar for Linux](https://github.com/CometWorks/Pulsar) (`linux` branch)
-and [Magnetar](https://github.com/CometWorks/magnetar) fetch the release
-archive at build time instead of building these dependencies themselves.
+and [Magnetar](https://github.com/CometWorks/magnetar) fetch the SE1 release
+archive (`se1-dependencies.tar.gz`) **and** the Steam archive
+(`steam-dependencies.tar.gz`, carrying `Steamworks.NET.dll` +
+`libsteam_api.so`) at build time instead of building these dependencies
+themselves. The SE2 archive (`se2-dependencies.tar.gz`) is for the Space
+Engineers 2 Linux port — see [the SE2 archive](#the-se2-archive) below.
 
 Each consumer has a `Scripts/fetch_linux_dependencies.sh` that resolves a
-release and downloads `linux-dependencies.tar.gz`. The two copies are
+release and downloads the assets it needs (both game-relevant archives come
+from the same release, so one tag pin covers them). The two copies are
 deliberately near-identical, and they mirror the existing
 `fetch_native_wrappers.sh` in both repos so there is one fetch pattern to
 understand rather than two.
@@ -25,15 +30,15 @@ cache that its `build.sh` then copies the wanted files out of.
    staged. If it matches the resolved tag and every expected file is already
    present, the download is skipped.
 3. **Clear what the previous release staged.** `tar` only overlays, so without
-   this a release that renames a file — an FFmpeg SOVERSION bump, say — would
-   leave the old one behind and the consumer would ship both. Pulsar extracts
-   into a directory it shares with the native-wrapper fetch, so it records a
+   this a release that renames or removes a file would leave the old one
+   behind and the consumer would ship both. Pulsar extracts into a directory
+   it shares with the native-wrapper fetch, so it records a
    `build/linux-dependencies.manifest` of the paths each release owns and
    removes only those. Magnetar extracts into a directory of its own and can
-   simply wipe it.
-4. **Download and extract**, preserving symlinks — `tar -xz`, never a
-   dereferencing copy, or the `libavcodec.so` → `.so.62` → `.so.62.28.100`
-   chain that FFmpeg's SONAME resolution needs would be flattened.
+   simply wipe it. (This is what makes the bare-filename layout transition
+   safe: the versioned files and symlinks of older releases are cleared.)
+4. **Download and extract.** The archives contain only real files under
+   bare, unversioned names — no symlink chains to preserve.
 5. **Verify** that the files that consumer needs actually arrived.
 
 If the GitHub API is unreachable but a cached copy is already staged, the
@@ -56,21 +61,22 @@ LINUX_DEPENDENCIES_TAG=v1.0.7 ./build.sh
 
 ## Pulsar for Linux
 
-`Scripts/build_dependencies.sh` orchestrates two fetches and nothing else:
+`Scripts/build_dependencies.sh` orchestrates the fetches and nothing else:
 
 ```
-Scripts/fetch_linux_dependencies.sh   -> FFmpeg, DXVK, OpenAL, Steamworks.NET,
-                                         EOS + Steam blobs, LICENSES/
+Scripts/fetch_linux_dependencies.sh   -> se1-dependencies.tar.gz (FFmpeg,
+                                         DXVK, OpenAL, EOS, LICENSES/) +
+                                         steam-dependencies.tar.gz
+                                         (Steamworks.NET.dll, libsteam_api.so)
 Scripts/fetch_native_wrappers.sh      -> libD3DCompiler.so, libHavok.so,
                                          libRecastDetour.so, libVRageNative.so
 ```
 
-Both land directly in `build/Libraries/`, and the script's final assertion —
-the full expected-file list, unchanged from before this split — confirms the
-combined result. `Legacy/Legacy.csproj` copies that folder next to the apphost
-in its `AfterBuild` and `AfterPublish` targets, and `Shared/Shared.csproj`
-references `build/Libraries/Steamworks.NET.dll`; neither needed any change,
-because `build/Libraries/` still ends up with exactly the same contents.
+Everything lands directly in `build/Libraries/`, and the script's final
+assertion — the full expected-file list — confirms the combined result.
+`Legacy/Legacy.csproj` copies that folder next to the apphost in its
+`AfterBuild` and `AfterPublish` targets, and `Shared/Shared.csproj`
+references `build/Libraries/Steamworks.NET.dll`.
 
 Pulsar's own `Scripts/build_ffmpeg.sh`, `build_dxvk.sh` and
 `build_steamworks_net.sh` are gone, along with its `Vendor/` directory and
@@ -79,10 +85,12 @@ compiling FFmpeg and DXVK.
 
 ## Magnetar
 
-Magnetar is headless, so it takes `Steamworks.NET.dll` and the two proprietary
-runtimes but not FFmpeg, DXVK or OpenAL — those stay unused in
-`build/linux-deps/` and never reach the bundle. Its `build.sh` fetches both
-releases and then stages only the files it wants into `build/Libraries/`.
+Magnetar is headless, so from the SE1 archive it takes only
+`libEOSSDK-Linux-Shipping.so` — FFmpeg, DXVK and OpenAL stay unused in
+`build/linux-deps/` and never reach the bundle — and it takes the whole
+Steam archive (`Steamworks.NET.dll` + `libsteam_api.so`). Its `build.sh`
+fetches the releases and then stages only the files it wants into
+`build/Libraries/`.
 
 That applies to the licence texts too. Copying `LICENSES/` wholesale would put
 FFmpeg, DXVK and OpenAL attribution into a bundle containing none of those
@@ -110,6 +118,29 @@ Every library is probed in the same order, most specific first:
 
 So a locally supplied `.so` still wins over the release, and `build.sh` prints
 exactly which path each file came from.
+
+## The SE2 archive
+
+The Space Engineers 2 Linux port consumes `se2-dependencies.tar.gz`,
+which carries the patched DXVK build (byte-identical to the SE1 archive's
+copy), the patched vkd3d-proton build, and the FMOD Engine runtime — see
+[release-archive.md](release-archive.md#layout-se2-archive) for the exact
+contents. It follows the same fetch pattern (same release, second asset name)
+and the same rules: extract with symlink-preserving `tar`, keep `LICENSES/`
+next to the binaries. The SE2 native wrappers (`libVRage.*.Native.so`) come
+from the linux-native-wrappers release, fetched separately — the same split
+as for SE1.
+
+Two SE2-specific notes:
+
+* The FMOD blobs ship **unmodified** (no patchelf) under the bare names, so
+  `libfmodstudio.so`'s internal `NEEDED` entry still references the upstream
+  SONAME `libfmod.so.14`, which no shipped file carries. **Load `libfmod.so`
+  (globally) before `libfmodstudio.so`** — the already-loaded library then
+  satisfies the reference by SONAME.
+* The asset exists only from the release that introduced it onward; a fetch
+  script should fail with a clear message when the asset is missing from an
+  older pinned tag.
 
 ## Adding a new consumer
 

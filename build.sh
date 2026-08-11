@@ -2,22 +2,46 @@
 # build.sh
 #
 # Top-level orchestrator for the Space Engineers Linux binary dependencies.
-# Builds every library from source, stages the result in build/Libraries/,
-# verifies the staged tree, and packages it as the release archive
-# dist/linux-dependencies.tar.gz.
+# Builds every library from source ONCE, stages the results in
+# build/Libraries/ (Space Engineers 1), build/Libraries-SE2/ (Space
+# Engineers 2) and build/Libraries-Steam/ (Steam integration), verifies the
+# staged trees, and packages them as three release archives:
+#
+#   dist/se1-dependencies.tar.gz     SE1 (Pulsar for Linux, Magnetar)
+#   dist/se2-dependencies.tar.gz     SE2 (Space Engineers 2 Linux port)
+#   dist/steam-dependencies.tar.gz   Steamworks.NET.dll + libsteam_api.so,
+#                                    consumed alongside either of the above
+#
+# The SE1 archive's DXVK files are the patched build (Patches/dxvk/), shared
+# byte-identically with the SE2 archive, and nothing is built twice.
+# Everything new with the SE2 port (vkd3d-proton, FMOD) ships in the SE2
+# archive only; the Steam bits ship in their own archive so a Steamworks
+# update does not republish the game-specific payloads.
 #
 # Pipeline (in order):
 #
-#   1. Scripts/build_ffmpeg.sh          FFmpeg 8.1 (libav*.so* / libsw*.so*)
-#   2. Scripts/build_dxvk.sh            DXVK Native v2.7.1
-#                                       (libdxvk_d3d11.so + libdxvk_dxgi.so + .0 links)
-#   3. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so*)
-#   4. Scripts/build_steamworks_net.sh  Steamworks.NET.dll
-#   5. Vendor copy:                     libEOSSDK-Linux-Shipping.so + libsteam_api.so
+#   1. Scripts/build_ffmpeg.sh          FFmpeg 8.1 (libav*.so / libsw*.so)
+#   2. Scripts/build_dxvk.sh            DXVK Native v2.7.1 + Patches/dxvk/
+#                                       (libdxvk_d3d11.so + libdxvk_dxgi.so)
+#   3. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
+#                                       Patches/vkd3d-proton/, staged straight
+#                                       into Libraries-SE2/
+#   4. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so)
+#   5. Scripts/build_steamworks_net.sh  Steamworks.NET.dll, staged straight
+#                                       into Libraries-Steam/
+#   6. Shared-artefact copy:            the patched DXVK files from
+#                                       Libraries/ into Libraries-SE2/
+#   7. Vendor copy:                     libEOSSDK-Linux-Shipping.so -> SE1,
+#                                       libsteam_api.so -> Steam
 #                                       (proprietary, committed under Vendor/)
-#   6. License copy:                    Licenses/*.txt -> LICENSES/ subdir
-#   7. Final assertion:                 every expected artefact is present
-#   8. Package:                         dist/linux-dependencies.tar.gz
+#   8. SE2 vendor copy:                 the FMOD runtime from Vendor/, staged
+#                                       under the bare names (libfmod.so +
+#                                       libfmodstudio.so)
+#   9. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
+#                                       DXVK + Licenses/se2/*.txt -> LICENSES/ (SE2);
+#                                       Licenses/steam/*.txt -> LICENSES/ (Steam)
+#  10. Final assertion:                 every expected artefact is present
+#  11. Package:                         all three archives under dist/
 #
 # The native wrapper libraries (libD3DCompiler.so, libHavok.so,
 # libRecastDetour.so, libVRageNative.so) are deliberately NOT part of this
@@ -37,13 +61,15 @@
 # final assertion is reported but not fatal and packaging is skipped.
 #
 # Env-var overrides (defaults shown):
-#   REPO_DIR      = <dir of this script>
-#   BUILD_DIR     = $REPO_DIR/build
-#   LIBRARIES_DIR = $BUILD_DIR/Libraries
-#   OUTPUT_DIR    = $REPO_DIR/dist
-#   VENDOR_DIR    = $REPO_DIR/Vendor
-#   LICENSES_SRC  = $REPO_DIR/Licenses
-#   JOBS          = $(nproc)
+#   REPO_DIR            = <dir of this script>
+#   BUILD_DIR           = $REPO_DIR/build
+#   LIBRARIES_DIR       = $BUILD_DIR/Libraries
+#   LIBRARIES_SE2_DIR   = $BUILD_DIR/Libraries-SE2
+#   LIBRARIES_STEAM_DIR = $BUILD_DIR/Libraries-Steam
+#   OUTPUT_DIR          = $REPO_DIR/dist
+#   VENDOR_DIR          = $REPO_DIR/Vendor
+#   LICENSES_SRC        = $REPO_DIR/Licenses
+#   JOBS                = $(nproc)
 #
 # Requirements: see docs/building.md. In short: gcc, g++, make, meson, ninja,
 # glslangValidator, pkg-config, curl, tar, git, nasm (or yasm), patchelf,
@@ -57,13 +83,17 @@ SCRIPTS_DIR="$SCRIPT_DIR/Scripts"
 REPO_DIR="${REPO_DIR:-$SCRIPT_DIR}"
 BUILD_DIR="${BUILD_DIR:-$REPO_DIR/build}"
 LIBRARIES_DIR="${LIBRARIES_DIR:-$BUILD_DIR/Libraries}"
+LIBRARIES_SE2_DIR="${LIBRARIES_SE2_DIR:-$BUILD_DIR/Libraries-SE2}"
+LIBRARIES_STEAM_DIR="${LIBRARIES_STEAM_DIR:-$BUILD_DIR/Libraries-Steam}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPO_DIR/dist}"
 VENDOR_DIR="${VENDOR_DIR:-$REPO_DIR/Vendor}"
 LICENSES_SRC="${LICENSES_SRC:-$REPO_DIR/Licenses}"
 
-ARCHIVE_NAME="linux-dependencies.tar.gz"
+ARCHIVE_NAME="se1-dependencies.tar.gz"
+ARCHIVE_NAME_SE2="se2-dependencies.tar.gz"
+ARCHIVE_NAME_STEAM="steam-dependencies.tar.gz"
 
-export REPO_DIR BUILD_DIR LIBRARIES_DIR
+export REPO_DIR BUILD_DIR LIBRARIES_DIR LIBRARIES_SE2_DIR LIBRARIES_STEAM_DIR
 
 # ---- arg parsing ------------------------------------------------------------
 
@@ -91,7 +121,7 @@ fi
 # Reject unknown step names. Without this a typo (--only=steamworks_net with an
 # underscore) matches nothing, silently skips every build, and reports only
 # that staging is incomplete.
-STEP_NAMES="ffmpeg dxvk openal steamworks-net"
+STEP_NAMES="ffmpeg dxvk vkd3d-proton openal steamworks-net"
 for spec in "$ONLY" "$SKIP"; do
     [ -n "$spec" ] || continue
     IFS=',' read -ra names <<< "$spec"
@@ -124,7 +154,8 @@ want_step() {
 
 # ---- preflight --------------------------------------------------------------
 
-mkdir -p "$LIBRARIES_DIR/LICENSES"
+mkdir -p "$LIBRARIES_DIR/LICENSES" "$LIBRARIES_SE2_DIR/LICENSES" \
+         "$LIBRARIES_STEAM_DIR/LICENSES"
 
 [ -d "$VENDOR_DIR" ] || {
     echo "ERROR: $VENDOR_DIR not found." >&2
@@ -139,12 +170,14 @@ mkdir -p "$LIBRARIES_DIR/LICENSES"
     exit 1
 }
 
-echo "==> Repo dir    : $REPO_DIR"
-echo "==> Build dir   : $BUILD_DIR"
-echo "==> Staging dir : $LIBRARIES_DIR"
-echo "==> Output dir  : $OUTPUT_DIR"
+echo "==> Repo dir          : $REPO_DIR"
+echo "==> Build dir         : $BUILD_DIR"
+echo "==> SE1 staging dir   : $LIBRARIES_DIR"
+echo "==> SE2 staging dir   : $LIBRARIES_SE2_DIR"
+echo "==> Steam staging dir : $LIBRARIES_STEAM_DIR"
+echo "==> Output dir        : $OUTPUT_DIR"
 
-# ---- 1..4. per-dependency build scripts ------------------------------------
+# ---- 1..5. per-dependency build scripts ------------------------------------
 
 run_step() {
     local name="$1"; shift
@@ -163,62 +196,135 @@ run_step() {
 
 run_step ffmpeg         "$SCRIPTS_DIR/build_ffmpeg.sh"
 run_step dxvk           "$SCRIPTS_DIR/build_dxvk.sh"
+run_step vkd3d-proton   "$SCRIPTS_DIR/build_vkd3d_proton.sh"
 run_step openal         "$SCRIPTS_DIR/build_openal.sh"
 run_step steamworks-net "$SCRIPTS_DIR/build_steamworks_net.sh"
 
-# ---- 5. Vendor blobs --------------------------------------------------------
+# ---- 6. shared artefacts: patched DXVK -> Libraries-SE2/ --------------------
+# The patched DXVK libraries ship in BOTH archives but are built only once,
+# into Libraries/. Copy them into the SE2 staging tree. Skipped file-by-file
+# under --only / --skip filters, when the source files were not staged this
+# run.
 
 echo
 echo "############################################################"
-echo "# build: vendor blobs (Vendor/ -> Libraries/)"
+echo "# build: shared artefacts (Libraries/ -> Libraries-SE2/)"
 echo "############################################################"
-for blob in libEOSSDK-Linux-Shipping.so libsteam_api.so; do
+SHARED_FILES=(
+    libdxvk_d3d11.so
+    libdxvk_dxgi.so
+)
+for f in "${SHARED_FILES[@]}"; do
+    if [ -e "$LIBRARIES_DIR/$f" ]; then
+        install -m 0755 "$LIBRARIES_DIR/$f" "$LIBRARIES_SE2_DIR/$f"
+        echo "  copied $f"
+    elif [ "$FILTERED" = "1" ]; then
+        echo "  skipped $f (not staged under the active --only/--skip filter)"
+    else
+        echo "ERROR: expected shared artefact missing: $LIBRARIES_DIR/$f" >&2
+        exit 1
+    fi
+done
+
+# ---- 7. Vendor blobs --------------------------------------------------------
+
+echo
+echo "############################################################"
+echo "# build: vendor blobs (Vendor/ -> Libraries/, Libraries-Steam/)"
+echo "############################################################"
+# libEOSSDK goes to the SE1 archive; libsteam_api ships in the Steam archive
+# next to Steamworks.NET.dll, its managed binding.
+for spec in "libEOSSDK-Linux-Shipping.so:$LIBRARIES_DIR" \
+            "libsteam_api.so:$LIBRARIES_STEAM_DIR"; do
+    blob="${spec%%:*}"
+    dest="${spec#*:}"
     src="$VENDOR_DIR/$blob"
     if [ ! -f "$src" ]; then
         echo "ERROR: missing vendor blob: $src" >&2
         echo "       These SDKs are proprietary and must stay committed under Vendor/." >&2
         exit 1
     fi
-    install -m 0755 "$src" "$LIBRARIES_DIR/$blob"
-    echo "  copied $blob"
+    install -m 0755 "$src" "$dest/$blob"
+    echo "  copied $blob -> ${dest##*/}/"
 done
 
-# ---- 6. Licenses ------------------------------------------------------------
+# ---- 8. SE2 vendor blobs (FMOD) ---------------------------------------------
+# The proprietary FMOD Engine runtime (login-gated download, committed under
+# Vendor/ like EOS and Steamworks). SE1 does not use FMOD, so it ships only
+# in the SE2 archive. The committed files keep their upstream SONAME names
+# (libfmod.so.14) for provenance, but the archive carries no version-suffixed
+# filenames, so they are staged under the bare names. The binaries are NOT
+# modified: libfmodstudio's internal NEEDED entry still references
+# libfmod.so.14, so the consumer must load libfmod.so before libfmodstudio.so
+# (see docs/consuming.md). The SE2 native wrappers are NOT here: like the SE1
+# wrappers, they are built and released by CometWorks/linux-native-wrappers
+# and consumers fetch them separately.
 
 echo
 echo "############################################################"
-echo "# build: licenses (Licenses/ -> Libraries/LICENSES/)"
+echo "# build: SE2 vendor blobs (Vendor/ -> Libraries-SE2/)"
+echo "############################################################"
+find "$LIBRARIES_SE2_DIR" -maxdepth 1 -name 'libfmod*.so*' -delete
+for name in libfmod libfmodstudio; do
+    src="$VENDOR_DIR/$name.so.14"
+    if [ ! -f "$src" ]; then
+        echo "ERROR: missing vendor blob: $src" >&2
+        echo "       These SDKs are proprietary and must stay committed under Vendor/." >&2
+        exit 1
+    fi
+    install -m 0755 "$src" "$LIBRARIES_SE2_DIR/$name.so"
+    echo "  copied $name.so.14 -> $name.so"
+done
+
+# ---- 9. Licenses ------------------------------------------------------------
+# SE1 archive: every top-level Licenses/*.txt. SE2 archive: the shared DXVK
+# licence plus the SE2-specific notices under Licenses/se2/. Steam archive:
+# the notices under Licenses/steam/. The subdirectories exist precisely so
+# the SE1 glob below does not pick their contents up.
+
+echo
+echo "############################################################"
+echo "# build: licenses (Licenses/ -> Libraries*/LICENSES/)"
 echo "############################################################"
 shopt -s nullglob
 for f in "$LICENSES_SRC"/*.txt; do
     install -m 0644 "$f" "$LIBRARIES_DIR/LICENSES/$(basename "$f")"
     echo "  copied $(basename "$f")"
 done
+install -m 0644 "$LICENSES_SRC/DXVK-LICENSE.txt" \
+    "$LIBRARIES_SE2_DIR/LICENSES/DXVK-LICENSE.txt"
+echo "  copied DXVK-LICENSE.txt (SE2)"
+for f in "$LICENSES_SRC"/se2/*.txt; do
+    install -m 0644 "$f" "$LIBRARIES_SE2_DIR/LICENSES/$(basename "$f")"
+    echo "  copied $(basename "$f") (SE2)"
+done
+for f in "$LICENSES_SRC"/steam/*.txt; do
+    install -m 0644 "$f" "$LIBRARIES_STEAM_DIR/LICENSES/$(basename "$f")"
+    echo "  copied $(basename "$f") (Steam)"
+done
 shopt -u nullglob
 
-# ---- 7. final assertion ----------------------------------------------------
+# ---- 10. final assertion ----------------------------------------------------
 # Confirm every artefact every consumer expects is present. Missing files here
 # are far easier to debug than a cryptic failure inside a consumer's build.
 #
-# Keep this list in sync with docs/release-archive.md, which is the contract
-# the consuming repos (Pulsar for Linux, Magnetar) rely on.
+# Keep these lists in sync with docs/release-archive.md, which is the contract
+# the consuming repos (Pulsar for Linux, Magnetar, the SE2 port) rely on.
 
 EXPECTED_FILES=(
     # FFmpeg
-    libavcodec.so libavcodec.so.62 libavcodec.so.62.28.100
-    libavformat.so libavformat.so.62 libavformat.so.62.12.100
-    libavutil.so libavutil.so.60 libavutil.so.60.26.100
-    libswresample.so libswresample.so.6 libswresample.so.6.3.100
-    libswscale.so libswscale.so.9 libswscale.so.9.5.100
-    # DXVK
-    libdxvk_d3d11.so libdxvk_d3d11.so.0
-    libdxvk_dxgi.so  libdxvk_dxgi.so.0
+    libavcodec.so
+    libavformat.so
+    libavutil.so
+    libswresample.so
+    libswscale.so
+    # DXVK (patched, shared with the SE2 archive)
+    libdxvk_d3d11.so
+    libdxvk_dxgi.so
     # OpenAL
-    libopenal.so libopenal.so.1
+    libopenal.so
     # Vendor
-    libEOSSDK-Linux-Shipping.so libsteam_api.so
-    # Managed
-    Steamworks.NET.dll
+    libEOSSDK-Linux-Shipping.so
     # Licenses
     LICENSES/DXVK-LICENSE.txt
     LICENSES/EOS-NOTICE.txt
@@ -228,14 +334,50 @@ EXPECTED_FILES=(
     LICENSES/OpenAL-Soft-NOTICES.txt
     LICENSES/OpenAL-Soft-README.txt
     LICENSES/README.txt
+)
+
+EXPECTED_FILES_STEAM=(
+    Steamworks.NET.dll
+    libsteam_api.so
+    LICENSES/README.txt
     LICENSES/Steam-NOTICE.txt
     LICENSES/Steamworks.NET-LICENSE.txt
+)
+
+EXPECTED_FILES_SE2=(
+    # DXVK (patched, identical to the SE1 archive's copy)
+    libdxvk_d3d11.so
+    libdxvk_dxgi.so
+    # vkd3d-proton (patched)
+    libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so
+    # FMOD (vendor blobs staged under bare names)
+    libfmod.so
+    libfmodstudio.so
+    # Licenses
+    LICENSES/DXVK-LICENSE.txt
+    LICENSES/FMOD-EULA.txt
+    LICENSES/FMOD-NOTICE.txt
+    LICENSES/README.txt
+    LICENSES/VKD3D-LGPL-2.1.txt
+    LICENSES/vkd3d-proton-README.txt
 )
 
 MISSING=0
 for rel in "${EXPECTED_FILES[@]}"; do
     if [ ! -e "$LIBRARIES_DIR/$rel" ]; then
         echo "MISSING: $LIBRARIES_DIR/$rel" >&2
+        MISSING=1
+    fi
+done
+for rel in "${EXPECTED_FILES_SE2[@]}"; do
+    if [ ! -e "$LIBRARIES_SE2_DIR/$rel" ]; then
+        echo "MISSING: $LIBRARIES_SE2_DIR/$rel" >&2
+        MISSING=1
+    fi
+done
+for rel in "${EXPECTED_FILES_STEAM[@]}"; do
+    if [ ! -e "$LIBRARIES_STEAM_DIR/$rel" ]; then
+        echo "MISSING: $LIBRARIES_STEAM_DIR/$rel" >&2
         MISSING=1
     fi
 done
@@ -251,16 +393,19 @@ fi
 echo
 echo "==> All expected artefacts present in $LIBRARIES_DIR"
 ( cd "$LIBRARIES_DIR" && ls -lh | sed 's/^/  /' )
+echo
+echo "==> All expected artefacts present in $LIBRARIES_SE2_DIR"
+( cd "$LIBRARIES_SE2_DIR" && ls -lh | sed 's/^/  /' )
+echo
+echo "==> All expected artefacts present in $LIBRARIES_STEAM_DIR"
+( cd "$LIBRARIES_STEAM_DIR" && ls -lh | sed 's/^/  /' )
 
-# ---- 8. package -------------------------------------------------------------
-# The archive mirrors build/Libraries/ exactly: every library at the archive
-# root plus a LICENSES/ subdir. Consumers extract it straight into their own
-# Libraries staging folder, so any layout change here is a breaking change
-# for them — see docs/release-archive.md.
-#
-# Symlinks are stored AS symlinks (tar's default), which is what keeps the
-# libavcodec.so -> .so.62 -> .so.62.28.100 chain intact on extraction and the
-# archive small.
+# ---- 11. package ------------------------------------------------------------
+# Each archive mirrors its staging tree exactly: every library at the archive
+# root plus a LICENSES/ subdir, no symlinks, no version-suffixed filenames.
+# Consumers extract it straight into their own Libraries staging folder, so
+# any layout change here is a breaking change for them — see
+# docs/release-archive.md.
 
 if [ "$FILTERED" = "1" ]; then
     echo
@@ -274,26 +419,34 @@ if [ "$DO_PACKAGE" = "0" ]; then
     exit 0
 fi
 
-echo
-echo "############################################################"
-echo "# build: packaging -> $OUTPUT_DIR/$ARCHIVE_NAME"
-echo "############################################################"
+package_archive() {
+    # package_archive <staging dir> <archive name>
+    local staging="$1" archive="$2"
+    echo
+    echo "############################################################"
+    echo "# build: packaging -> $OUTPUT_DIR/$archive"
+    echo "############################################################"
+    rm -f "$OUTPUT_DIR/$archive"
+    # --sort=name + a fixed mtime/owner make the archive byte-reproducible for
+    # a given set of inputs, so an unchanged rebuild produces an identical file.
+    tar --sort=name \
+        --owner=0 --group=0 --numeric-owner \
+        --mtime='UTC 2020-01-01' \
+        -czf "$OUTPUT_DIR/$archive" \
+        -C "$staging" .
+    echo "==> Archive contents:"
+    tar -tzf "$OUTPUT_DIR/$archive" | sed 's/^/  /'
+}
 
 mkdir -p "$OUTPUT_DIR"
-rm -f "$OUTPUT_DIR/$ARCHIVE_NAME"
 
-# --sort=name + a fixed mtime/owner make the archive byte-reproducible for a
-# given set of inputs, so an unchanged rebuild produces an identical file.
-tar --sort=name \
-    --owner=0 --group=0 --numeric-owner \
-    --mtime='UTC 2020-01-01' \
-    -czf "$OUTPUT_DIR/$ARCHIVE_NAME" \
-    -C "$LIBRARIES_DIR" .
-
-echo "==> Archive contents:"
-tar -tzf "$OUTPUT_DIR/$ARCHIVE_NAME" | sed 's/^/  /'
+package_archive "$LIBRARIES_DIR" "$ARCHIVE_NAME"
+package_archive "$LIBRARIES_SE2_DIR" "$ARCHIVE_NAME_SE2"
+package_archive "$LIBRARIES_STEAM_DIR" "$ARCHIVE_NAME_STEAM"
 
 echo
 echo "############################################################"
 echo "# DONE  $(du -h "$OUTPUT_DIR/$ARCHIVE_NAME" | awk '{print $1}')  $OUTPUT_DIR/$ARCHIVE_NAME"
+echo "# DONE  $(du -h "$OUTPUT_DIR/$ARCHIVE_NAME_SE2" | awk '{print $1}')  $OUTPUT_DIR/$ARCHIVE_NAME_SE2"
+echo "# DONE  $(du -h "$OUTPUT_DIR/$ARCHIVE_NAME_STEAM" | awk '{print $1}')  $OUTPUT_DIR/$ARCHIVE_NAME_STEAM"
 echo "############################################################"

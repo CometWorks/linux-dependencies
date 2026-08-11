@@ -1,56 +1,49 @@
-# The release archive
+# The release archives
 
 This document is the **contract** between this repo and its consumers. Pulsar
 and Magnetar extract the archive straight into their own `build/Libraries/`
 staging folder, so its layout is an API: changing it breaks them.
 
-## Asset
+## Assets
 
-Each release carries a single asset:
+Each release carries three assets:
 
 ```
-linux-dependencies.tar.gz
+se1-dependencies.tar.gz     Space Engineers 1 (Pulsar for Linux, Magnetar)
+se2-dependencies.tar.gz     Space Engineers 2 (the SE2 Linux port)
+steam-dependencies.tar.gz   Steamworks.NET.dll + libsteam_api.so, consumed
+                            alongside either game archive
 ```
 
-Roughly 24 MB, gzip-compressed tar, built by `build.sh`.
+All are gzip-compressed tars built by `build.sh` (roughly 24 MB, 7 MB and
+250 kB). The patched DXVK binaries are **byte-identical across the two game
+archives** — built once, copied into both staging trees.
 
-Download the latest with:
+Download the latest with (same pattern for the other two assets):
 
 ```bash
-curl -fL -o linux-dependencies.tar.gz \
-  https://github.com/CometWorks/linux-dependencies/releases/latest/download/linux-dependencies.tar.gz
+curl -fL -o se1-dependencies.tar.gz \
+  https://github.com/CometWorks/linux-dependencies/releases/latest/download/se1-dependencies.tar.gz
 ```
 
-## Layout
+## Layout (SE1 archive)
 
-Every library sits at the archive root; licence texts sit in a single
-`LICENSES/` subdirectory. There is no top-level wrapper directory, so
-`tar -xzf linux-dependencies.tar.gz -C <staging dir>` is the whole staging
+Every library sits at the archive root as a **single real file under its
+bare, unversioned name** — no symlinks, no version-suffixed filenames.
+Licence texts sit in a single `LICENSES/` subdirectory. There is no
+top-level wrapper directory, so
+`tar -xzf se1-dependencies.tar.gz -C <staging dir>` is the whole staging
 step.
 
 ```
-libavcodec.so                 -> libavcodec.so.62.28.100     (symlink)
-libavcodec.so.62              -> libavcodec.so.62.28.100     (symlink)
-libavcodec.so.62.28.100
-libavformat.so                -> libavformat.so.62.12.100    (symlink)
-libavformat.so.62             -> libavformat.so.62.12.100    (symlink)
-libavformat.so.62.12.100
-libavutil.so                  -> libavutil.so.60.26.100      (symlink)
-libavutil.so.60               -> libavutil.so.60.26.100      (symlink)
-libavutil.so.60.26.100
-libswresample.so              -> libswresample.so.6.3.100    (symlink)
-libswresample.so.6            -> libswresample.so.6.3.100    (symlink)
-libswresample.so.6.3.100
-libswscale.so                 -> libswscale.so.9.5.100       (symlink)
-libswscale.so.9               -> libswscale.so.9.5.100       (symlink)
-libswscale.so.9.5.100
-libdxvk_d3d11.so
-libdxvk_d3d11.so.0            -> libdxvk_d3d11.so            (symlink)
-libdxvk_dxgi.so
-libdxvk_dxgi.so.0             -> libdxvk_dxgi.so             (symlink)
+libavcodec.so
+libavformat.so
+libavutil.so
+libswresample.so
+libswscale.so
+libdxvk_d3d11.so              (patched, see Patches/dxvk/)
+libdxvk_dxgi.so               (patched)
 libEOSSDK-Linux-Shipping.so
-libsteam_api.so
-Steamworks.NET.dll
 LICENSES/DXVK-LICENSE.txt
 LICENSES/EOS-NOTICE.txt
 LICENSES/FFmpeg-LGPL-2.1.txt
@@ -59,16 +52,19 @@ LICENSES/OpenAL-Soft-LGPL-2.0.txt
 LICENSES/OpenAL-Soft-NOTICES.txt
 LICENSES/OpenAL-Soft-README.txt
 LICENSES/README.txt
-LICENSES/Steam-NOTICE.txt
-LICENSES/Steamworks.NET-LICENSE.txt
 ```
 
 ### Guarantees
 
-* **Symlinks are stored as symlinks**, not dereferenced into duplicate files.
-  Extract with GNU `tar` (or anything that preserves them) so the
-  `libavcodec.so` → `.so.62` → `.so.62.28.100` chain survives. This is also why
-  the archive is 23 MB rather than several times that.
+* **No symlinks and no version-suffixed filenames.** Each library is one
+  real file under its bare name. The SONAMEs *inside* the built binaries are
+  left as upstream produced them (useful for identifying the version with
+  `readelf`), but no file is named after them.
+* **Intra-bundle `NEEDED` entries reference the bare file names.** The
+  built libraries' cross-references (libavformat → libavcodec → libavutil,
+  libdxvk_d3d11 → libdxvk_dxgi) are rewritten with
+  `patchelf --replace-needed` at staging time, so together with
+  `DT_RUNPATH=$ORIGIN` they resolve against the files actually present.
 * **Every native `.so` has `DT_RUNPATH=$ORIGIN`**, so the libraries find each
   other next to themselves and no `LD_LIBRARY_PATH` manipulation is needed.
 * **The FFmpeg libraries depend only on glibc and libz.** Verified by an `ldd`
@@ -82,21 +78,79 @@ LICENSES/Steamworks.NET-LICENSE.txt
 `build.sh` asserts this exact file list before packaging. If you change the
 layout, update both that `EXPECTED_FILES` array and this document.
 
+## Layout (SE2 archive)
+
+Same conventions: everything at the archive root, licences under `LICENSES/`,
+extraction into the consumer's staging directory is the whole staging step.
+
+```
+libdxvk_d3d11.so              identical to the SE1 archive's copy
+libdxvk_dxgi.so               identical to the SE1 archive's copy
+libvkd3d-proton-d3d12.so      patched, see Patches/vkd3d-proton/ (SE2 only)
+libvkd3d-proton-d3d12core.so  patched (SE2 only)
+libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
+libfmodstudio.so              FMOD Studio API runtime (unmodified vendor blob)
+LICENSES/DXVK-LICENSE.txt
+LICENSES/FMOD-EULA.txt
+LICENSES/FMOD-NOTICE.txt
+LICENSES/README.txt
+LICENSES/VKD3D-LGPL-2.1.txt
+LICENSES/vkd3d-proton-README.txt
+```
+
+The FMOD blobs are shipped **unmodified** (no patchelf), matching how the
+EOS and Steamworks blobs are handled — only their file names are the bare
+ones. That means `libfmodstudio.so`'s internal `NEEDED` entry still
+references the upstream SONAME `libfmod.so.14`, which no shipped file
+carries: **the consumer must load `libfmod.so` before `libfmodstudio.so`**
+(the already-loaded library then satisfies the reference by SONAME). The
+built libraries carry `DT_RUNPATH=$ORIGIN` and bare-name `NEEDED` entries as
+in the SE1 archive. The SE2 native wrappers (`libVRage.*.Native.so`) are
+**not** in this archive; like the SE1 wrappers, they come from
+[CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
+
+`build.sh` asserts the corresponding `EXPECTED_FILES_SE2` array before
+packaging, same as the SE1 list.
+
+## Layout (Steam archive)
+
+Same conventions. Consumed alongside either game archive by any bundle that
+integrates with Steam; the two files belong together (the managed binding
+and the native runtime it P/Invokes).
+
+```
+Steamworks.NET.dll
+libsteam_api.so
+LICENSES/README.txt
+LICENSES/Steam-NOTICE.txt
+LICENSES/Steamworks.NET-LICENSE.txt
+```
+
+`build.sh` asserts the corresponding `EXPECTED_FILES_STEAM` array before
+packaging.
+
 ## Which files each consumer needs
 
-The archive is shared, so each consumer extracts all of it and uses the subset
-it needs. Nothing breaks from staging an unused library, and keeping one
-archive avoids a client/server split that would have to be maintained forever.
+The SE1 archive is shared, so each SE1 consumer extracts all of it and uses
+the subset it needs. Nothing breaks from staging an unused library, and
+keeping one archive avoids a client/server split that would have to be
+maintained forever.
 
 | File | Pulsar (client) | Magnetar (server) |
 | --- | :---: | :---: |
 | FFmpeg libraries | yes | no |
 | DXVK libraries | yes | no |
 | OpenAL library | yes | no |
-| `Steamworks.NET.dll` | yes | yes |
-| `libsteam_api.so` | yes | yes |
 | `libEOSSDK-Linux-Shipping.so` | yes | yes |
 | `LICENSES/` | yes | the subset covering what it ships |
+| Steam archive (`Steamworks.NET.dll` + `libsteam_api.so`) | yes | yes |
+
+The SE2 archive is consumed only by the Space Engineers 2 Linux port, which
+takes all of it (plus the Steam archive). The archives are kept separate —
+rather than subdirectories of one archive — so consumers never download or
+ship payload they cannot use, and a Steamworks update republishes neither
+game payload; the DXVK files shared between the game archives are the same
+bytes in both.
 
 ## Versioning and tags
 

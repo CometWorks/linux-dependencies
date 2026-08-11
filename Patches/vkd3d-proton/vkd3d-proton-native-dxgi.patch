@@ -1,0 +1,21 @@
+diff --git a/libs/d3d12core/main.c b/libs/d3d12core/main.c
+index d5788af4..b5c66a42 100644
+--- a/libs/d3d12core/main.c
++++ b/libs/d3d12core/main.c
+@@ -683,6 +683,2 @@ static HRESULT STDMETHODCALLTYPE d3d12core_CreateDeviceFromFactory(
+     passthrough_unix_environment("VKD3D_UNIX_ENV");
+-#else
+-    /* TODO: We need to attempt to dlopen() native DXVK DXGI and handle this more gracefully. */
+-    if (adapter)
+-        FIXME("Ignoring adapter.\n");
+ #endif
+@@ -699,5 +695,9 @@ static HRESULT STDMETHODCALLTYPE d3d12core_CreateDeviceFromFactory(
+     device_create_info.optional_device_extensions = optional_device_extensions;
+     device_create_info.optional_device_extension_count = ARRAY_SIZE(optional_device_extensions);
+     device_create_info.independent = factory != NULL;
++#ifndef _WIN32
++    /* Native DXVK queries this parent while constructing its D3D12 swapchain. */
++    device_create_info.parent = adapter;
++#endif
+     if (factory)
+         device_create_info.device_factory_flags = ID3D12DeviceFactory_GetFlags(factory);

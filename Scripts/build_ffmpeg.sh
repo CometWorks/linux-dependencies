@@ -361,21 +361,24 @@ find "$LIBRARIES_DIR" -maxdepth 1 \
      \( -name 'libav*.so*' -o -name 'libsw*.so*' \) -delete
 
 echo "==> Staging outputs into $LIBRARIES_DIR"
-# Copy realpath files first, then recreate the symlink chain. This avoids
-# `cp -a` accidentally turning a relative symlink into a dangling absolute
-# one across filesystems.
-for f in "$LIB_SRC"/lib*.so.*; do
-    [ -L "$f" ] && continue
-    cp -a "$f" "$LIBRARIES_DIR/$(basename "$f")"
+# The archives carry no symlinks and no version-suffixed filenames: each
+# library ships as a single real file under its bare name (libavcodec.so).
+# The SONAMEs inside the binaries stay as upstream produced them, but the
+# cross-FFmpeg NEEDED entries are rewritten below to the bare names so
+# DT_RUNPATH=$ORIGIN keeps resolving siblings next to the loaded library.
+for name in "${!EXPECTED_SOVER[@]}"; do
+    sover="${EXPECTED_SOVER[$name]}"
+    install -m 0755 "$LIB_SRC/lib${name}.so.${sover}" "$LIBRARIES_DIR/lib${name}.so"
 done
 
-# -sfn, not a skip-if-exists guard: the aliases must always be re-pointed at
-# the build we just staged.
-for link in "$LIB_SRC"/lib*.so*; do
-    [ -L "$link" ] || continue
-    target="$(readlink "$link")"   # relative target name, e.g. libavcodec.so.62.0.100
-    name="$(basename "$link")"
-    ln -sfn "$target" "$LIBRARIES_DIR/$name"
+echo "==> Rewriting cross-FFmpeg NEEDED entries to the bare names"
+for name in "${!EXPECTED_SOVER[@]}"; do
+    f="$LIBRARIES_DIR/lib${name}.so"
+    for dep in "${!EXPECTED_SOVER[@]}"; do
+        # No-op when the entry is absent; only actual references are renamed.
+        patchelf --replace-needed \
+            "lib${dep}.so.${EXPECTED_SOVER[$dep]}" "lib${dep}.so" "$f"
+    done
 done
 
 echo
