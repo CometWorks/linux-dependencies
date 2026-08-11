@@ -17,8 +17,7 @@ patched and the identical binaries ship in both archives.
 | Steamworks.NET | SE1 | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
 | Steamworks SDK | SE1 | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
-| FMOD Engine | SE2 | vendor blob (manual), 2.03.11 to match the game | proprietary (Firelight) | committed under `Vendor/se2/` |
-| SE2 native wrappers | SE2 | vendor blobs (linux-native-wrappers builds) | MIT | committed under `Vendor/se2/` |
+| FMOD Engine | SE2 | vendor blob (manual), 2.03.11 to match the game | proprietary (Firelight) | committed under `Vendor/` |
 
 `Scripts/build_sdl3.sh` builds SDL3 3.4.12 as well, but nothing from it is
 shipped — it exists only so DXVK has headers to compile against. See
@@ -310,22 +309,20 @@ downloads are gated behind logged-in partner portals. Updating them is a manual
 maintainer task documented in [maintenance.md](maintenance.md) and in
 [Vendor/README.md](../Vendor/README.md).
 
-### SE2 vendor blobs
-
-`Vendor/se2/` holds the binary-only libraries of the SE2 archive:
+A third proprietary runtime ships in the SE2 archive only:
 
 * **`libfmod.so.14`, `libfmodstudio.so.14`** — the FMOD Engine runtime
   (Core + Studio), version **2.03.11** to match the FMOD the game ships.
   The FMOD API is version-locked: SE2's managed wrapper is generated for the
   game's FMOD version, so these must track it at least to the minor release.
-* **`libVRage.KytheraV2.Native.so`, `libVRage.Physics.Native.so`,
-  `libVRage.Slug.Native.so`, `libVRage.Voxels.Native.so`** — MIT-licensed
-  Linux wrapper builds of the game's Keen-built native DLL surface, built
-  from the `linux-native-wrappers` sister repository. Committed as blobs
-  because no SE2 wrapper release exists yet; they should switch to a
-  wrappers-repo release when one does.
+  SE1 does not use FMOD.
 
-Provenance and update rules: [Vendor/se2/README.md](../Vendor/se2/README.md).
+Provenance and update rules: [Vendor/README.md](../Vendor/README.md).
+
+The SE2 native wrappers (`libVRage.*.Native.so`) are **not** shipped here —
+like the SE1 PE-loader wrappers, they are built and released by
+[CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers)
+and consumers fetch them separately.
 
 ---
 

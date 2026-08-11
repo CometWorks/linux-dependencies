@@ -108,25 +108,22 @@ libvkd3d-proton-d3d12.so      identical to the SE1 archive's copy
 libvkd3d-proton-d3d12core.so  identical to the SE1 archive's copy
 libfmod.so.14                 FMOD Core API runtime (unmodified vendor blob)
 libfmodstudio.so.14           FMOD Studio API runtime (unmodified vendor blob)
-libVRage.KytheraV2.Native.so  SE2 native wrapper (vendor blob)
-libVRage.Physics.Native.so    SE2 native wrapper (vendor blob)
-libVRage.Slug.Native.so       SE2 native wrapper (vendor blob)
-libVRage.Voxels.Native.so     SE2 native wrapper (vendor blob)
 LICENSES/DXVK-LICENSE.txt
 LICENSES/FMOD-EULA.txt
 LICENSES/FMOD-NOTICE.txt
 LICENSES/README.txt
 LICENSES/VKD3D-LGPL-2.1.txt
-LICENSES/linux-native-wrappers-MIT.txt
 LICENSES/vkd3d-proton-README.txt
 ```
 
 The FMOD file names carry the upstream SONAMEs (`libfmod.so.14`), exactly as
 the SE2 port consumes them — `libfmodstudio.so.14`'s `NEEDED` entry
-references `libfmod` by that SONAME. The vendor blobs (FMOD and the
-wrappers) are shipped **unmodified** (no patchelf), matching how the EOS and
-Steamworks blobs are handled; the built libraries carry
-`DT_RUNPATH=$ORIGIN` as everywhere else.
+references `libfmod` by that SONAME. The FMOD blobs are shipped
+**unmodified** (no patchelf), matching how the EOS and Steamworks blobs are
+handled; the built libraries carry `DT_RUNPATH=$ORIGIN` as everywhere else.
+The SE2 native wrappers (`libVRage.*.Native.so`) are **not** in this
+archive; like the SE1 wrappers, they come from
+[CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
 
 `build.sh` asserts the corresponding `EXPECTED_FILES_SE2` array before
 packaging, same as the SE1 list.

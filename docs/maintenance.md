@@ -128,15 +128,12 @@ manually maintained.
 Redistribution here relies on agreements the maintainers have accepted; see
 [Vendor/README.md](../Vendor/README.md).
 
-## Updating the SE2 vendor blobs
+## Updating the FMOD blobs (SE2 archive)
 
-`Vendor/se2/` holds the FMOD runtime and the SE2 native wrappers; all are
-manually maintained blobs.
-
-**FMOD** (`libfmod.so.14`, `libfmodstudio.so.14`) is version-locked to the
-game: the FMOD wrapper inside Space Engineers 2 is generated for the FMOD
-version the game ships, so the blobs must match it at least to the minor
-release.
+`Vendor/libfmod.so.14` and `Vendor/libfmodstudio.so.14` are proprietary and
+manually maintained like the blobs above — but version-locked to the game:
+the FMOD wrapper inside Space Engineers 2 is generated for the FMOD version
+the game ships, so the blobs must match it at least to the minor release.
 
 1. Find the game's FMOD version:
    `strings -el "<SE2 game dir>/fmod.dll" | grep -A1 FileVersion`
@@ -144,16 +141,10 @@ release.
    <https://www.fmod.com/download> (login required).
 3. Copy the two x86_64 release-variant runtimes under their SONAME file
    names — the exact paths and rules are in
-   [Vendor/se2/README.md](../Vendor/se2/README.md). If the SONAME digit
-   changed (a new FMOD major/minor), update `SE2_BLOBS` in `build.sh`,
-   `EXPECTED_FILES_SE2`, and the file list in `release-archive.md` together.
+   [Vendor/README.md](../Vendor/README.md). If the SONAME digit changed
+   (a new FMOD major/minor), update the copy step and `EXPECTED_FILES_SE2`
+   in `build.sh` and the file list in `release-archive.md` together.
 4. Commit and push.
-
-**The wrappers** (`libVRage.*.Native.so`) are builds of the
-`linux-native-wrappers` sister repository; replace them when that repo's SE2
-support changes, and record the source commits in `Vendor/se2/README.md`.
-When the wrappers repo starts publishing SE2 releases, switch consumers to
-that release and retire these blobs.
 
 ## Changing the archive layout
 

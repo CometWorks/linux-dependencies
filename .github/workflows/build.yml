@@ -9,7 +9,7 @@ name: Build
 #                                    for Linux and Magnetar.
 #   * linux-dependencies-se2.tar.gz  Space Engineers 2 — the same patched
 #                                    DXVK + vkd3d-proton builds plus the FMOD
-#                                    runtime and the SE2 native wrappers.
+#                                    runtime.
 #
 # DXVK and vkd3d-proton are built once with their Patches/ series applied;
 # the identical binaries ship in both archives.

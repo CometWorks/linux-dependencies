@@ -29,8 +29,8 @@
 #                                       from Libraries/ into Libraries-SE2/
 #   7. Vendor copy:                     libEOSSDK-Linux-Shipping.so + libsteam_api.so
 #                                       (proprietary, committed under Vendor/)
-#   8. SE2 vendor copy:                 FMOD runtime + libVRage.*.Native.so
-#                                       wrappers from Vendor/se2/
+#   8. SE2 vendor copy:                 the FMOD runtime (libfmod.so.14 +
+#                                       libfmodstudio.so.14) from Vendor/
 #   9. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
 #                                       DXVK + vkd3d + Licenses/se2/*.txt
 #                                       -> LICENSES/ (SE2)
@@ -233,27 +233,23 @@ for blob in libEOSSDK-Linux-Shipping.so libsteam_api.so; do
     echo "  copied $blob"
 done
 
-# ---- 8. SE2 vendor blobs ----------------------------------------------------
-# The binary-only native libraries of the SE2 client's Linux port, committed
-# under Vendor/se2/: the proprietary FMOD Engine runtime (login-gated
-# download, like EOS and Steamworks) and the MIT-licensed SE2 native wrapper
-# builds. SE1 does not use any of these, so they ship only in the SE2
-# archive. The file names already carry the SONAMEs, so plain copies suffice.
+# ---- 8. SE2 vendor blobs (FMOD) ---------------------------------------------
+# The proprietary FMOD Engine runtime (login-gated download, committed under
+# Vendor/ like EOS and Steamworks). SE1 does not use FMOD, so it ships only
+# in the SE2 archive. The file names already carry the SONAMEs, so plain
+# copies suffice. The SE2 native wrappers are NOT here: like the SE1
+# wrappers, they are built and released by CometWorks/linux-native-wrappers
+# and consumers fetch them separately.
 
 echo
 echo "############################################################"
-echo "# build: SE2 vendor blobs (Vendor/se2/ -> Libraries-SE2/)"
+echo "# build: SE2 vendor blobs (Vendor/ -> Libraries-SE2/)"
 echo "############################################################"
-SE2_BLOBS=(
-    libfmod.so.14 libfmodstudio.so.14
-    libVRage.KytheraV2.Native.so libVRage.Physics.Native.so
-    libVRage.Slug.Native.so libVRage.Voxels.Native.so
-)
-for blob in "${SE2_BLOBS[@]}"; do
-    src="$VENDOR_DIR/se2/$blob"
+for blob in libfmod.so.14 libfmodstudio.so.14; do
+    src="$VENDOR_DIR/$blob"
     if [ ! -f "$src" ]; then
-        echo "ERROR: missing SE2 vendor blob: $src" >&2
-        echo "       These are committed under Vendor/se2/ — see its README.md." >&2
+        echo "ERROR: missing vendor blob: $src" >&2
+        echo "       These SDKs are proprietary and must stay committed under Vendor/." >&2
         exit 1
     fi
     install -m 0755 "$src" "$LIBRARIES_SE2_DIR/$blob"
@@ -335,18 +331,12 @@ EXPECTED_FILES_SE2=(
     # FMOD (vendor blobs, file names carry the SONAMEs)
     libfmod.so.14
     libfmodstudio.so.14
-    # SE2 native wrappers (vendor blobs)
-    libVRage.KytheraV2.Native.so
-    libVRage.Physics.Native.so
-    libVRage.Slug.Native.so
-    libVRage.Voxels.Native.so
     # Licenses
     LICENSES/DXVK-LICENSE.txt
     LICENSES/FMOD-EULA.txt
     LICENSES/FMOD-NOTICE.txt
     LICENSES/README.txt
     LICENSES/VKD3D-LGPL-2.1.txt
-    LICENSES/linux-native-wrappers-MIT.txt
     LICENSES/vkd3d-proton-README.txt
 )
 

@@ -19,8 +19,6 @@ Files in this directory:
                                   libfmod.so.14 and libfmodstudio.so.14
                                   (proprietary, Firelight Technologies)
     FMOD-NOTICE.txt               FMOD attribution notice
-    linux-native-wrappers-MIT.txt MIT licence covering the
-                                  libVRage.*.Native.so wrapper libraries
 
 This is the SE2 companion archive (linux-dependencies-se2.tar.gz). The
 Space Engineers 1 libraries and their licences ship separately in

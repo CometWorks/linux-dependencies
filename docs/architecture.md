@@ -37,8 +37,7 @@ for the PE-loader shims.
 | `Steamworks.NET.dll` | SE1 | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
 | `libsteam_api.so` | SE1 | Proprietary Valve blob, committed under `Vendor/` |
-| `libfmod.so.14`, `libfmodstudio.so.14` | SE2 | Proprietary Firelight blobs, committed under `Vendor/se2/` |
-| `libVRage.*.Native.so` (4 wrappers) | SE2 | MIT blobs built from linux-native-wrappers, committed under `Vendor/se2/` |
+| `libfmod.so.14`, `libfmodstudio.so.14` | SE2 | Proprietary Firelight blobs, committed under `Vendor/` |
 | `LICENSES/*.txt` | both | Third-party licence texts and attribution, committed under `Licenses/` |
 
 Two policies shape the archive split:
@@ -47,19 +46,18 @@ Two policies shape the archive split:
   vkd3d-proton carry source-level fixes (see `Patches/`); the same binaries
   ship to SE1 and SE2 so there is exactly one build to test and no variant
   drift.
-* **SE2-only payload stays out of the SE1 archive.** FMOD and the SE2
-  wrappers ship only in `linux-dependencies-se2.tar.gz`, so SE1 consumers
-  never download or ship libraries they cannot use.
+* **SE2-only payload stays out of the SE1 archive.** FMOD ships only in
+  `linux-dependencies-se2.tar.gz`, so SE1 consumers never download or ship
+  libraries they cannot use.
 
 ### Out of scope — deliberately not here
 
-**The SE1 native wrapper libraries** (`libD3DCompiler.so`, `libHavok.so`,
-`libRecastDetour.so`, `libVRageNative.so`) are built and released by
+**The native wrapper libraries** — SE1's PE-loader shims
+(`libD3DCompiler.so`, `libHavok.so`, `libRecastDetour.so`,
+`libVRageNative.so`) and SE2's `libVRage.*.Native.so` set — are built and
+released by
 [CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
-Consumers fetch that release directly, in addition to this one. (The SE2
-wrappers under `Vendor/se2/` are a temporary exception: the wrappers repo
-does not publish SE2 builds yet, so tested blobs are committed here until it
-does.)
+Consumers fetch that release directly, in addition to this one.
 
 They are kept separate on purpose. The wrappers change far more often than
 FFmpeg or DXVK do, and re-bundling them here would mean every wrapper fix

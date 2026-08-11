@@ -118,16 +118,18 @@ exactly which path each file came from.
 
 The Space Engineers 2 Linux port consumes `linux-dependencies-se2.tar.gz`,
 which carries the patched DXVK and vkd3d-proton builds (byte-identical to the
-SE1 archive's copies), the FMOD Engine runtime, and the SE2 native wrappers —
-see [release-archive.md](release-archive.md#layout-se2-archive) for the exact
+SE1 archive's copies) and the FMOD Engine runtime — see
+[release-archive.md](release-archive.md#layout-se2-archive) for the exact
 contents. It follows the same fetch pattern (same release, second asset name)
 and the same rules: extract with symlink-preserving `tar`, keep `LICENSES/`
-next to the binaries.
+next to the binaries. The SE2 native wrappers (`libVRage.*.Native.so`) come
+from the linux-native-wrappers release, fetched separately — the same split
+as for SE1.
 
 Two SE2-specific notes:
 
-* The vendor blobs (FMOD, wrappers) ship **unmodified** (no `DT_RUNPATH`
-  patching), and `libfmodstudio.so.14` references `libfmod` by its SONAME
+* The FMOD blobs ship **unmodified** (no `DT_RUNPATH` patching), and
+  `libfmodstudio.so.14` references `libfmod` by its SONAME
   (`libfmod.so.14`). Load (or preload) `libfmod.so.14` before
   `libfmodstudio.so.14`, or make sure the staging directory is on the
   loader's search path for that resolution.

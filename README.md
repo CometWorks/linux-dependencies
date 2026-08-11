@@ -12,8 +12,7 @@ published release archive instead of building these libraries themselves.
 
 DXVK Native and vkd3d-proton are built **once**, with the patch series under
 [Patches/](Patches/) applied, and the identical binaries ship in both
-archives. FMOD and the SE2 native wrappers ship only in the SE2 archive,
-because SE1 does not use them.
+archives. FMOD ships only in the SE2 archive, because SE1 does not use it.
 
 ### `linux-dependencies.tar.gz` — Space Engineers 1
 
@@ -34,14 +33,13 @@ because SE1 does not use them.
 | DXVK Native — same patched build as above | 2.7.1 | zlib |
 | vkd3d-proton — same patched build as above | pinned commit | LGPL-2.1 |
 | FMOD Engine (`libfmod.so.14`, `libfmodstudio.so.14`) | 2.03.11, matching the game | proprietary (Firelight) |
-| SE2 native wrappers (`libVRage.{KytheraV2,Physics,Slug,Voxels}.Native.so`) | vendor blobs | MIT |
 
 Everything, plus the third-party licence texts, is published as release
 assets on every release.
 
-The PE-loader wrapper libraries (`libD3DCompiler.so`, `libHavok.so`,
-`libRecastDetour.so`, `libVRageNative.so`) are **not** part of this repo — they
-come from
+The native wrapper libraries — SE1's PE-loader shims (`libD3DCompiler.so`,
+`libHavok.so`, `libRecastDetour.so`, `libVRageNative.so`) and SE2's
+`libVRage.*.Native.so` set — are **not** part of this repo; they come from
 [CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
 
 ## Using it

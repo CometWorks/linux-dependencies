@@ -165,9 +165,9 @@ real versioned file, not a symlink.
 not produce everything `build.sh` expects. The lines above it name each missing
 file.
 
-**`ERROR: missing vendor blob:`** / **`ERROR: missing SE2 vendor blob:`** —
-a blob under `Vendor/` or `Vendor/se2/` is absent. These are committed; a
-fresh clone has them, so this usually means a partial checkout.
+**`ERROR: missing vendor blob:`** — a blob under `Vendor/` is absent. These
+are committed; a fresh clone has them, so this usually means a partial
+checkout.
 
 **`ERROR: patch failed to apply:`** — a patch under `Patches/dxvk/` or
 `Patches/vkd3d-proton/` no longer applies to the pinned upstream version,
