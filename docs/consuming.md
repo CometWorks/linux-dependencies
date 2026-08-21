@@ -65,7 +65,7 @@ LINUX_DEPENDENCIES_TAG=v1.0.7 ./build.sh
 
 ```
 Scripts/fetch_linux_dependencies.sh   -> se1-dependencies.tar.gz (FFmpeg,
-                                         DXVK, OpenAL, EOS, LICENSES/) +
+                                         DXVK, SDL3, OpenAL, EOS, LICENSES/) +
                                          steam-dependencies.tar.gz
                                          (Steamworks.NET.dll, libsteam_api.so)
 Scripts/fetch_native_wrappers.sh      -> libD3DCompiler.so, libHavok.so,
@@ -83,17 +83,37 @@ Pulsar's own `Scripts/build_ffmpeg.sh`, `build_dxvk.sh` and
 `Scripts/Licenses/`. A clean build no longer spends roughly fifteen minutes
 compiling FFmpeg and DXVK.
 
+### SDL3 now comes from the bundle
+
+`libSDL3.so` is new in the SE1 archive (and the SE2 one). Pulsar already
+preloads `libSDL3.so` — `Legacy/Loader/NativeLibraryPreloader.cs` — because
+DXVK's SDL3 WSI driver `dlopen`s `libSDL3.so.0` and Pulsar sets
+`DXVK_WSI_DRIVER=SDL3`. What changes is only *which* file that preload picks
+up: the bundled one next to the other libraries, instead of whatever SDL3 the
+host distribution happens to provide.
+
+That preload is not optional any more. The shipped file is named
+`libSDL3.so`, while DXVK asks for the SONAME `libSDL3.so.0`; the two meet
+because the preloaded object satisfies the later `dlopen` by SONAME. Without
+the preload, DXVK falls back to searching the system for `libSDL3.so.0` —
+which on many distributions is not installed at all. It is the same
+arrangement `libopenal.so` already relies on.
+
+Nothing else changes for a consumer that stages the whole archive: the new
+file arrives with the rest, and `LICENSES/SDL3-LICENSE.txt` and
+`LICENSES/SDL3-README.txt` come with it.
+
 ## Magnetar
 
 Magnetar is headless, so from the SE1 archive it takes only
-`libEOSSDK-Linux-Shipping.so` — FFmpeg, DXVK and OpenAL stay unused in
+`libEOSSDK-Linux-Shipping.so` — FFmpeg, DXVK, SDL3 and OpenAL stay unused in
 `build/linux-deps/` and never reach the bundle — and it takes the whole
 Steam archive (`Steamworks.NET.dll` + `libsteam_api.so`). Its `build.sh`
 fetches the releases and then stages only the files it wants into
 `build/Libraries/`.
 
 That applies to the licence texts too. Copying `LICENSES/` wholesale would put
-FFmpeg, DXVK and OpenAL attribution into a bundle containing none of those
+FFmpeg, DXVK, SDL3 and OpenAL attribution into a bundle containing none of those
 libraries, and the archive's own `LICENSES/README.txt` index would list files
 that are not there. Magnetar therefore stages just the three notices covering
 what it ships — `Steamworks.NET-LICENSE.txt`, `Steam-NOTICE.txt` and
@@ -122,8 +142,9 @@ exactly which path each file came from.
 ## The SE2 archive
 
 The Space Engineers 2 Linux port consumes `se2-dependencies.tar.gz`,
-which carries the patched DXVK build (byte-identical to the SE1 archive's
-copy), the patched vkd3d-proton build, and the FMOD Engine runtime — see
+which carries the patched DXVK build and `libSDL3.so` (both byte-identical
+to the SE1 archive's copies), the patched vkd3d-proton build, and the FMOD
+Engine runtime — see
 [release-archive.md](release-archive.md#layout-se2-archive) for the exact
 contents. It follows the same fetch pattern (same release, second asset name)
 and the same rules: extract with symlink-preserving `tar`, keep `LICENSES/`
@@ -131,13 +152,16 @@ next to the binaries. The SE2 native wrappers (`libVRage.*.Native.so`) come
 from the linux-native-wrappers release, fetched separately — the same split
 as for SE1.
 
-Two SE2-specific notes:
+Three SE2-specific notes:
 
 * The FMOD blobs ship **unmodified** (no patchelf) under the bare names, so
   `libfmodstudio.so`'s internal `NEEDED` entry still references the upstream
   SONAME `libfmod.so.14`, which no shipped file carries. **Load `libfmod.so`
   (globally) before `libfmodstudio.so`** — the already-loaded library then
   satisfies the reference by SONAME.
+* `libSDL3.so` needs the same preload as in SE1: load it from the bundle
+  before DXVK initialises, so DXVK's `dlopen("libSDL3.so.0")` resolves to the
+  bundled copy by SONAME rather than searching the host.
 * The asset exists only from the release that introduced it onward; a fetch
   script should fail with a clear message when the asset is missing from an
   older pinned tag.

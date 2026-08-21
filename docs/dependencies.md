@@ -5,14 +5,14 @@ pinned. To change any of these, see [maintenance.md](maintenance.md).
 
 ## Summary
 
-Every library is built (or staged) **once**. The SE1 archive keeps exactly
-its pre-SE2 library set; its DXVK files are the patched build, shared
-byte-identically with the SE2 archive.
+Every library is built (or staged) **once**. The DXVK files and `libSDL3.so`
+are shared byte-identically between the two game archives.
 
 | Dependency | Archives | Version / pin | Licence | Built by |
 | --- | --- | --- | --- | --- |
 | FFmpeg | SE1 | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
 | DXVK Native + `Patches/dxvk/` series | both | tag `v2.7.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
+| SDL3 | both | tag `release-3.4.12` | zlib | `Scripts/build_sdl3.sh` |
 | vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
 | OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
 | Steamworks.NET | Steam | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
@@ -20,9 +20,9 @@ byte-identically with the SE2 archive.
 | Steamworks SDK | Steam | vendor blob (manual) | proprietary (Valve) | committed under `Vendor/` |
 | FMOD Engine | SE2 | vendor blob (manual), 2.03.11 to match the game | proprietary (Firelight) | committed under `Vendor/` |
 
-`Scripts/build_sdl3.sh` builds SDL3 3.4.12 as well, but nothing from it is
-shipped — it exists only so DXVK has headers to compile against. See
-[SDL3 is a build-time dependency](#sdl3-is-a-build-time-dependency).
+SDL3 has a double role: it supplies the headers DXVK compiles against *and*
+ships as `libSDL3.so`, because DXVK's window-system integration dlopens it at
+runtime. See [SDL3](#sdl3-3412).
 
 ---
 
@@ -131,35 +131,6 @@ so an upstream rearrangement (`usr/lib64/`, a multiarch subdirectory) does not
 silently break staging. They then get the same `DT_RUNPATH=$ORIGIN` treatment
 as the FFmpeg libraries.
 
-### SDL3 is a build-time dependency
-
-DXVK's meson build refuses to configure without SDL3, SDL2 or GLFW, because
-its window-system integration needs one of them. Pulsar sets
-`DXVK_WSI_DRIVER=SDL3` and preloads `libSDL3.so` from the user's system, so it
-is specifically the SDL3 backend we need.
-
-SDL3 is a *headers-only* dependency here. DXVK takes it as
-`lib_sdl3.partial_dependency(compile_args: true, includes: true)` and dlopens
-`libSDL3.so.0` at runtime, so the produced `libdxvk_*.so` have no `NEEDED`
-entry for SDL3 and nothing SDL-related ships in the archive.
-
-Ubuntu 24.04 — the pinned CI runner — has no `libsdl3-dev` package, and a
-developer machine may have any SDL3 version or none. `Scripts/build_sdl3.sh`
-therefore builds a pinned SDL3 (**3.4.12**) into `build/sdl3-prefix/` and
-`build_dxvk.sh` puts that on `PKG_CONFIG_PATH`, so CI and local builds compile
-against identical headers.
-
-That SDL3 is configured with `SDL_UNIX_CONSOLE_BUILD=ON`, which skips SDL's
-"could not find X11 or Wayland development libraries" hard error. The check
-guards against accidentally building an SDL that cannot open a window — which
-does not matter here, since nothing links or loads this SDL and the public
-headers are the same either way. It saves installing the entire X11 and
-Wayland dev stack on the runner to build a library that is then discarded.
-
-Both choices were verified to be neutral: DXVK built against the pinned,
-console-only 3.4.12 is byte-identical to DXVK built against a full system
-SDL3 3.5.0.
-
 ### The patch series
 
 The series under [Patches/dxvk/](../Patches/dxvk/) is applied onto the
@@ -185,6 +156,54 @@ Mechanics worth knowing:
   signal that a `DXVK_VERSION` bump needs the series rebased.
 
 ---
+
+## SDL3 3.4.12
+
+DXVK's meson build refuses to configure without SDL3, SDL2 or GLFW, because
+its window-system integration needs one of them. Pulsar sets
+`DXVK_WSI_DRIVER=SDL3`, so it is specifically the SDL3 backend we need.
+
+At build time SDL3 is a *headers-only* dependency. DXVK takes it as
+`lib_sdl3.partial_dependency(compile_args: true, includes: true)`, so the
+produced `libdxvk_*.so` have no `NEEDED` entry for SDL3. At runtime they
+`dlopen("libSDL3.so.0")` instead — and that call has to find something.
+
+Leaving that to the host was the previous arrangement and it is not
+dependable: SDL3 is new enough that plenty of otherwise current distributions
+ship no `libSDL3` at all, and the ones that do ship whatever version they
+froze. Ubuntu 24.04 — the pinned CI runner — has no `libsdl3-dev` package
+either. So `Scripts/build_sdl3.sh` builds a pinned SDL3 (**3.4.12**) into
+`build/sdl3-prefix/`, `build_dxvk.sh` puts that on `PKG_CONFIG_PATH`, and the
+same build is staged into **both** game archives as `libSDL3.so`. DXVK and the
+SDL3 it was compiled against are then always a matched set.
+
+**Produces:** `libSDL3.so` — the real file under the bare name, with
+`DT_RUNPATH=$ORIGIN`, in the SE1 and SE2 archives (identical bytes). The
+binary is unmodified upstream SDL3; no patch series applies to it.
+
+**The SONAME matters here.** The shipped file is `libSDL3.so`, but DXVK
+dlopens `libSDL3.so.0` — the SONAME inside the binary. Those only meet
+because the consumer preloads the file first, after which the dlopen resolves
+against the already-loaded object by SONAME. It is exactly the arrangement the
+bundled OpenAL relies on, and `build_sdl3.sh` asserts the SONAME so an
+upstream major bump cannot leave the bundled copy silently unused.
+
+**Video drivers are required, not autodetected.** Because the library now
+ships, it has to be able to open a window. SDL's CMake enables X11 and Wayland
+by default but turns each off *silently* when its development headers are
+missing — the same trap as OpenAL's audio backends, and the reason the old
+`SDL_UNIX_CONSOLE_BUILD=ON` shortcut (which suppressed SDL's own "no X11 or
+Wayland" error) is gone. SDL has no `REQUIRE_*` equivalent, so `build_sdl3.sh`
+greps the generated `SDL_build_config.h` for `SDL_VIDEO_DRIVER_X11`,
+`SDL_VIDEO_DRIVER_WAYLAND` and `SDL_VIDEO_VULKAN` and fails the build if any is
+absent. The X11 and Wayland dev packages are correspondingly part of the
+toolchain now; see [building.md](building.md).
+
+Those display libraries are *dlopened* by SDL at runtime rather than linked
+(`SDL_X11_SHARED` / `SDL_WAYLAND_SHARED`, both on), so the shipped
+`libSDL3.so` still has no `NEEDED` entry beyond glibc and picks up whichever
+display server and audio stack the host provides. `build_sdl3.sh` verifies
+that with the same `ldd` allow-list the FFmpeg and OpenAL builds use.
 
 ## vkd3d-proton (patched, SE2 archive only)
 

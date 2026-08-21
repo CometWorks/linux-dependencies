@@ -15,9 +15,9 @@ steam-dependencies.tar.gz   Steamworks.NET.dll + libsteam_api.so, consumed
                             alongside either game archive
 ```
 
-All are gzip-compressed tars built by `build.sh` (roughly 24 MB, 7 MB and
-250 kB). The patched DXVK binaries are **byte-identical across the two game
-archives** — built once, copied into both staging trees.
+All are gzip-compressed tars built by `build.sh` (roughly 26 MB, 8 MB and
+250 kB). The patched DXVK binaries and `libSDL3.so` are **byte-identical
+across the two game archives** — built once, staged into both trees.
 
 Download the latest with (same pattern for the other two assets):
 
@@ -43,6 +43,9 @@ libswresample.so
 libswscale.so
 libdxvk_d3d11.so              (patched, see Patches/dxvk/)
 libdxvk_dxgi.so               (patched)
+libSDL3.so                    (unmodified upstream; DXVK's WSI driver
+                               dlopens it — see the SONAME note below)
+libopenal.so
 libEOSSDK-Linux-Shipping.so
 LICENSES/DXVK-LICENSE.txt
 LICENSES/EOS-NOTICE.txt
@@ -52,6 +55,8 @@ LICENSES/OpenAL-Soft-LGPL-2.0.txt
 LICENSES/OpenAL-Soft-NOTICES.txt
 LICENSES/OpenAL-Soft-README.txt
 LICENSES/README.txt
+LICENSES/SDL3-LICENSE.txt
+LICENSES/SDL3-README.txt
 ```
 
 ### Guarantees
@@ -69,6 +74,13 @@ LICENSES/README.txt
   other next to themselves and no `LD_LIBRARY_PATH` manipulation is needed.
 * **The FFmpeg libraries depend only on glibc and libz.** Verified by an `ldd`
   allow-list at build time.
+* **`libSDL3.so` is loaded by file name, resolved by SONAME.** The file is
+  named `libSDL3.so`; DXVK's SDL3 WSI driver `dlopen`s `libSDL3.so.0`, the
+  SONAME inside the binary. The consumer must therefore **load
+  `libSDL3.so` from the bundle before DXVK initialises** — the already-loaded
+  object then satisfies DXVK's request, and the bundled SDL3 is used instead
+  of whatever the host has (or does not have). Consumers that already preload
+  it need no change; the file simply comes from the bundle now.
 * **The archive is byte-reproducible** for a given set of inputs: `tar` is
   invoked with `--sort=name`, a fixed `--mtime`, and numeric owner 0:0.
 * **`libD3DCompiler.so`, `libHavok.so`, `libRecastDetour.so` and
@@ -86,6 +98,7 @@ extraction into the consumer's staging directory is the whole staging step.
 ```
 libdxvk_d3d11.so              identical to the SE1 archive's copy
 libdxvk_dxgi.so               identical to the SE1 archive's copy
+libSDL3.so                    identical to the SE1 archive's copy
 libvkd3d-proton-d3d12.so      patched, see Patches/vkd3d-proton/ (SE2 only)
 libvkd3d-proton-d3d12core.so  patched (SE2 only)
 libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
@@ -94,9 +107,14 @@ LICENSES/DXVK-LICENSE.txt
 LICENSES/FMOD-EULA.txt
 LICENSES/FMOD-NOTICE.txt
 LICENSES/README.txt
+LICENSES/SDL3-LICENSE.txt
+LICENSES/SDL3-README.txt
 LICENSES/VKD3D-LGPL-2.1.txt
 LICENSES/vkd3d-proton-README.txt
 ```
+
+The SDL3 SONAME note from the SE1 section applies here too: the SE2 port must
+load `libSDL3.so` from the bundle before DXVK initialises.
 
 The FMOD blobs are shipped **unmodified** (no patchelf), matching how the
 EOS and Steamworks blobs are handled — only their file names are the bare
@@ -140,6 +158,7 @@ maintained forever.
 | --- | :---: | :---: |
 | FFmpeg libraries | yes | no |
 | DXVK libraries | yes | no |
+| `libSDL3.so` | yes | no |
 | OpenAL library | yes | no |
 | `libEOSSDK-Linux-Shipping.so` | yes | yes |
 | `LICENSES/` | yes | the subset covering what it ships |
