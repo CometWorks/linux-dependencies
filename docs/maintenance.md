@@ -66,14 +66,29 @@ Patches are applied with `git apply` in byte-wise filename order.
 
 ## Bumping SDL3
 
-SDL3 is not shipped — it only supplies headers for the DXVK build. Set
-`SDL3_VERSION` in `Scripts/build_sdl3.sh` (the upstream tag is
-`release-$SDL3_VERSION`) and rebuild DXVK.
+SDL3 both supplies headers for the DXVK build and ships as `libSDL3.so` in
+**both game archives**, so a bump changes what users run, not just what DXVK
+compiles against. Test accordingly.
 
-A bump is usually only needed when a newer DXVK requires newer SDL3 headers.
-Because DXVK dlopens `libSDL3.so.0` at runtime rather than linking it, the
-version built here does not constrain what users need installed — but building
-against much newer headers than the SDL3 in the wild is still worth avoiding.
+1. Set `SDL3_VERSION` in `Scripts/build_sdl3.sh` (the upstream tag is
+   `release-$SDL3_VERSION`).
+2. Build. If upstream bumps the SONAME past `libSDL3.so.0`, the script fails
+   with an explicit message; update `EXPECTED_SONAME` there — and check the
+   consumers, because DXVK dlopens the SONAME and the shipped file is named
+   `libSDL3.so`, so the two only meet through the consumer's preload.
+3. The shipped file name stays bare, so no expected-file list changes.
+4. Refresh `Licenses/SDL3-README.txt` — it names the version and the tag —
+   and re-copy `Licenses/SDL3-LICENSE.txt` from upstream's `LICENSE.txt` if
+   the copyright line moved.
+
+If you change the cmake options in `build_sdl3.sh` rather than the version,
+bump `CONFIG_REV` in the same file. It is part of the cache stamp, and without
+a bump an existing `build/` tree re-stages the old, differently configured
+library instead of rebuilding.
+
+Since DXVK dlopens SDL3 rather than linking it, the version built here does
+not constrain the host — but it is now the copy users actually get, so prefer
+a released tag over a development one.
 
 ## Bumping OpenAL Soft
 

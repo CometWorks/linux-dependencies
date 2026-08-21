@@ -17,6 +17,9 @@ Files in this directory:
     OpenAL-Soft-README.txt     Build provenance + LGPL relinking notes
     OpenAL-Soft-NOTICES.txt    BSD-3-Clause and PFFFT notices for the
                                portions of OpenAL Soft under those terms
+    SDL3-LICENSE.txt           zlib licence covering libSDL3.so (unmodified
+                               upstream SDL3)
+    SDL3-README.txt            Build provenance + replacement notes
     EOS-NOTICE.txt             Attribution for libEOSSDK-Linux-Shipping.so
                                (proprietary, Epic Games)
 
@@ -29,4 +32,6 @@ text.
 The Space Engineers 2 companion archive (se2-dependencies.tar.gz) and the
 Steam companion archive (steam-dependencies.tar.gz) carry their own LICENSES
 directories, sourced from the se2/ and steam/ subdirectories of the
-repository's Licenses/ folder; none of those notices ship here.
+repository's Licenses/ folder (plus the DXVK and SDL3 notices above, which
+cover binaries shared between the two game archives); none of the
+SE2-specific or Steam-specific notices ship here.

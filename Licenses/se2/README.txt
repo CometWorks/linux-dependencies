@@ -11,6 +11,10 @@ Files in this directory:
                                   from upstream DXVK plus the patch series
                                   published under Patches/dxvk/ in the
                                   CometWorks/linux-dependencies repository)
+    SDL3-LICENSE.txt              zlib licence covering libSDL3.so
+                                  (unmodified upstream SDL3, dlopened by
+                                  DXVK's window-system integration)
+    SDL3-README.txt               Build provenance + replacement notes
     VKD3D-LGPL-2.1.txt            LGPL-2.1 text covering
                                   libvkd3d-proton-d3d12*.so
     vkd3d-proton-README.txt       Build provenance + LGPL relinking notes
@@ -22,4 +26,5 @@ Files in this directory:
 
 This is the SE2 companion archive (se2-dependencies.tar.gz). The
 Space Engineers 1 libraries and their licences ship separately in
-se1-dependencies.tar.gz; the patched DXVK binaries are identical in both.
+se1-dependencies.tar.gz; the patched DXVK binaries and libSDL3.so are
+identical in both.

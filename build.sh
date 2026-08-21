@@ -13,7 +13,8 @@
 #                                    consumed alongside either of the above
 #
 # The SE1 archive's DXVK files are the patched build (Patches/dxvk/), shared
-# byte-identically with the SE2 archive, and nothing is built twice.
+# byte-identically with the SE2 archive, as is libSDL3.so — the library DXVK's
+# WSI driver dlopens — and nothing is built twice.
 # Everything new with the SE2 port (vkd3d-proton, FMOD) ships in the SE2
 # archive only; the Steam bits ship in their own archive so a Steamworks
 # update does not republish the game-specific payloads.
@@ -21,27 +22,30 @@
 # Pipeline (in order):
 #
 #   1. Scripts/build_ffmpeg.sh          FFmpeg 8.1 (libav*.so / libsw*.so)
-#   2. Scripts/build_dxvk.sh            DXVK Native v2.7.1 + Patches/dxvk/
+#   2. Scripts/build_sdl3.sh            SDL3 (libSDL3.so), staged into BOTH
+#                                       game staging trees; also supplies the
+#                                       headers the DXVK build compiles against
+#   3. Scripts/build_dxvk.sh            DXVK Native v2.7.1 + Patches/dxvk/
 #                                       (libdxvk_d3d11.so + libdxvk_dxgi.so)
-#   3. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
+#   4. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
 #                                       Patches/vkd3d-proton/, staged straight
 #                                       into Libraries-SE2/
-#   4. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so)
-#   5. Scripts/build_steamworks_net.sh  Steamworks.NET.dll, staged straight
+#   5. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so)
+#   6. Scripts/build_steamworks_net.sh  Steamworks.NET.dll, staged straight
 #                                       into Libraries-Steam/
-#   6. Shared-artefact copy:            the patched DXVK files from
+#   7. Shared-artefact copy:            the patched DXVK files from
 #                                       Libraries/ into Libraries-SE2/
-#   7. Vendor copy:                     libEOSSDK-Linux-Shipping.so -> SE1,
+#   8. Vendor copy:                     libEOSSDK-Linux-Shipping.so -> SE1,
 #                                       libsteam_api.so -> Steam
 #                                       (proprietary, committed under Vendor/)
-#   8. SE2 vendor copy:                 the FMOD runtime from Vendor/, staged
+#   9. SE2 vendor copy:                 the FMOD runtime from Vendor/, staged
 #                                       under the bare names (libfmod.so +
 #                                       libfmodstudio.so)
-#   9. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
+#  10. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
 #                                       DXVK + Licenses/se2/*.txt -> LICENSES/ (SE2);
 #                                       Licenses/steam/*.txt -> LICENSES/ (Steam)
-#  10. Final assertion:                 every expected artefact is present
-#  11. Package:                         all three archives under dist/
+#  11. Final assertion:                 every expected artefact is present
+#  12. Package:                         all three archives under dist/
 #
 # The native wrapper libraries (libD3DCompiler.so, libHavok.so,
 # libRecastDetour.so, libVRageNative.so) are deliberately NOT part of this
@@ -108,7 +112,7 @@ for arg in "$@"; do
         --no-package) DO_PACKAGE=0 ;;
         --only=*)     ONLY="${arg#--only=}" ;;
         --skip=*)     SKIP="${arg#--skip=}" ;;
-        -h|--help)    sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
@@ -121,7 +125,7 @@ fi
 # Reject unknown step names. Without this a typo (--only=steamworks_net with an
 # underscore) matches nothing, silently skips every build, and reports only
 # that staging is incomplete.
-STEP_NAMES="ffmpeg dxvk vkd3d-proton openal steamworks-net"
+STEP_NAMES="ffmpeg sdl3 dxvk vkd3d-proton openal steamworks-net"
 for spec in "$ONLY" "$SKIP"; do
     [ -n "$spec" ] || continue
     IFS=',' read -ra names <<< "$spec"
@@ -177,7 +181,7 @@ echo "==> SE2 staging dir   : $LIBRARIES_SE2_DIR"
 echo "==> Steam staging dir : $LIBRARIES_STEAM_DIR"
 echo "==> Output dir        : $OUTPUT_DIR"
 
-# ---- 1..5. per-dependency build scripts ------------------------------------
+# ---- 1..6. per-dependency build scripts ------------------------------------
 
 run_step() {
     local name="$1"; shift
@@ -195,12 +199,17 @@ run_step() {
 }
 
 run_step ffmpeg         "$SCRIPTS_DIR/build_ffmpeg.sh"
+# Before dxvk on purpose: the DXVK build needs SDL3's headers and pkg-config
+# file, and invokes build_sdl3.sh itself if they are not there yet. Running it
+# as its own step first makes the shipped artefact explicit (and skippable),
+# and leaves that inner invocation a cached no-op.
+run_step sdl3           "$SCRIPTS_DIR/build_sdl3.sh"
 run_step dxvk           "$SCRIPTS_DIR/build_dxvk.sh"
 run_step vkd3d-proton   "$SCRIPTS_DIR/build_vkd3d_proton.sh"
 run_step openal         "$SCRIPTS_DIR/build_openal.sh"
 run_step steamworks-net "$SCRIPTS_DIR/build_steamworks_net.sh"
 
-# ---- 6. shared artefacts: patched DXVK -> Libraries-SE2/ --------------------
+# ---- 7. shared artefacts: patched DXVK -> Libraries-SE2/ --------------------
 # The patched DXVK libraries ship in BOTH archives but are built only once,
 # into Libraries/. Copy them into the SE2 staging tree. Skipped file-by-file
 # under --only / --skip filters, when the source files were not staged this
@@ -226,7 +235,7 @@ for f in "${SHARED_FILES[@]}"; do
     fi
 done
 
-# ---- 7. Vendor blobs --------------------------------------------------------
+# ---- 8. Vendor blobs --------------------------------------------------------
 
 echo
 echo "############################################################"
@@ -248,7 +257,7 @@ for spec in "libEOSSDK-Linux-Shipping.so:$LIBRARIES_DIR" \
     echo "  copied $blob -> ${dest##*/}/"
 done
 
-# ---- 8. SE2 vendor blobs (FMOD) ---------------------------------------------
+# ---- 9. SE2 vendor blobs (FMOD) ---------------------------------------------
 # The proprietary FMOD Engine runtime (login-gated download, committed under
 # Vendor/ like EOS and Steamworks). SE1 does not use FMOD, so it ships only
 # in the SE2 archive. The committed files keep their upstream SONAME names
@@ -276,11 +285,12 @@ for name in libfmod libfmodstudio; do
     echo "  copied $name.so.14 -> $name.so"
 done
 
-# ---- 9. Licenses ------------------------------------------------------------
-# SE1 archive: every top-level Licenses/*.txt. SE2 archive: the shared DXVK
-# licence plus the SE2-specific notices under Licenses/se2/. Steam archive:
-# the notices under Licenses/steam/. The subdirectories exist precisely so
-# the SE1 glob below does not pick their contents up.
+# ---- 10. Licenses ------------------------------------------------------------
+# SE1 archive: every top-level Licenses/*.txt. SE2 archive: the notices for
+# the artefacts shared with SE1 (DXVK, SDL3) plus the SE2-specific ones under
+# Licenses/se2/. Steam archive: the notices under Licenses/steam/. The
+# subdirectories exist precisely so the SE1 glob below does not pick their
+# contents up.
 
 echo
 echo "############################################################"
@@ -291,9 +301,10 @@ for f in "$LICENSES_SRC"/*.txt; do
     install -m 0644 "$f" "$LIBRARIES_DIR/LICENSES/$(basename "$f")"
     echo "  copied $(basename "$f")"
 done
-install -m 0644 "$LICENSES_SRC/DXVK-LICENSE.txt" \
-    "$LIBRARIES_SE2_DIR/LICENSES/DXVK-LICENSE.txt"
-echo "  copied DXVK-LICENSE.txt (SE2)"
+for f in DXVK-LICENSE.txt SDL3-LICENSE.txt SDL3-README.txt; do
+    install -m 0644 "$LICENSES_SRC/$f" "$LIBRARIES_SE2_DIR/LICENSES/$f"
+    echo "  copied $f (SE2, shared with SE1)"
+done
 for f in "$LICENSES_SRC"/se2/*.txt; do
     install -m 0644 "$f" "$LIBRARIES_SE2_DIR/LICENSES/$(basename "$f")"
     echo "  copied $(basename "$f") (SE2)"
@@ -304,7 +315,7 @@ for f in "$LICENSES_SRC"/steam/*.txt; do
 done
 shopt -u nullglob
 
-# ---- 10. final assertion ----------------------------------------------------
+# ---- 11. final assertion ----------------------------------------------------
 # Confirm every artefact every consumer expects is present. Missing files here
 # are far easier to debug than a cryptic failure inside a consumer's build.
 #
@@ -321,6 +332,8 @@ EXPECTED_FILES=(
     # DXVK (patched, shared with the SE2 archive)
     libdxvk_d3d11.so
     libdxvk_dxgi.so
+    # SDL3 (shared with the SE2 archive; DXVK's WSI driver dlopens it)
+    libSDL3.so
     # OpenAL
     libopenal.so
     # Vendor
@@ -334,6 +347,8 @@ EXPECTED_FILES=(
     LICENSES/OpenAL-Soft-NOTICES.txt
     LICENSES/OpenAL-Soft-README.txt
     LICENSES/README.txt
+    LICENSES/SDL3-LICENSE.txt
+    LICENSES/SDL3-README.txt
 )
 
 EXPECTED_FILES_STEAM=(
@@ -348,6 +363,8 @@ EXPECTED_FILES_SE2=(
     # DXVK (patched, identical to the SE1 archive's copy)
     libdxvk_d3d11.so
     libdxvk_dxgi.so
+    # SDL3 (identical to the SE1 archive's copy)
+    libSDL3.so
     # vkd3d-proton (patched)
     libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so
     # FMOD (vendor blobs staged under bare names)
@@ -358,6 +375,8 @@ EXPECTED_FILES_SE2=(
     LICENSES/FMOD-EULA.txt
     LICENSES/FMOD-NOTICE.txt
     LICENSES/README.txt
+    LICENSES/SDL3-LICENSE.txt
+    LICENSES/SDL3-README.txt
     LICENSES/VKD3D-LGPL-2.1.txt
     LICENSES/vkd3d-proton-README.txt
 )
@@ -400,7 +419,7 @@ echo
 echo "==> All expected artefacts present in $LIBRARIES_STEAM_DIR"
 ( cd "$LIBRARIES_STEAM_DIR" && ls -lh | sed 's/^/  /' )
 
-# ---- 11. package ------------------------------------------------------------
+# ---- 12. package ------------------------------------------------------------
 # Each archive mirrors its staging tree exactly: every library at the archive
 # root plus a LICENSES/ subdir, no symlinks, no version-suffixed filenames.
 # Consumers extract it straight into their own Libraries staging folder, so

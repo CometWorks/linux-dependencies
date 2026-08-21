@@ -33,6 +33,7 @@ for the PE-loader shims.
 | `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | SE1 | FFmpeg 8.1, built from the upstream release tarball |
 | `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 2.7.1 + the `Patches/dxvk/` series, built once from the upstream git tag |
 | `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | SE2 | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series |
+| `libSDL3.so` | both | SDL3 3.4.12, built once from the upstream release tag; DXVK compiles against its headers and dlopens it at runtime |
 | `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
 | `Steamworks.NET.dll` | Steam | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
@@ -44,7 +45,10 @@ Three policies shape the archive split:
 
 * **Patched libraries are built once and shipped as the same bytes
   everywhere they appear.** DXVK (see `Patches/dxvk/`) ships identically in
-  the SE1 and SE2 archives — one build to test, no variant drift.
+  the SE1 and SE2 archives — one build to test, no variant drift. The same
+  holds for `libSDL3.so`, which DXVK dlopens: shipping the exact SDL3 the
+  DXVK binaries were compiled against keeps the pair a matched set instead of
+  depending on whatever the host distribution has.
 * **Everything new with the SE2 port ships only in the SE2 archive.**
   vkd3d-proton and FMOD go to `se2-dependencies.tar.gz` alone, so SE1
   consumers never download or ship libraries they cannot use.
