@@ -3,7 +3,7 @@ DXVK
 
 The following shared libraries shipped alongside this notice are part of
 DXVK (Direct3D 11 -> Vulkan translation layer), built from upstream sources
-at https://github.com/doitsujin/dxvk (version v2.7.1, per the embedded
+at https://github.com/doitsujin/dxvk (version v3.0.2, per the embedded
 version string in libdxvk_d3d11.so):
 
     libdxvk_d3d11.so   (SONAME: libdxvk_d3d11.so.0)

@@ -42,7 +42,7 @@
 # here. Nothing from SDL3 ends up in the release archives.
 #
 # Env-var overrides (defaults shown):
-#   DXVK_VERSION  = 2.7.1
+#   DXVK_VERSION  = 3.0.2
 #   DXVK_REPO     = https://github.com/doitsujin/dxvk.git
 #   BUILD_DIR     = <repo>/build
 #   LIBRARIES_DIR = $BUILD_DIR/Libraries
@@ -57,7 +57,7 @@
 
 set -euo pipefail
 
-DXVK_VERSION="${DXVK_VERSION:-2.7.1}"
+DXVK_VERSION="${DXVK_VERSION:-3.0.2}"
 DXVK_REPO="${DXVK_REPO:-https://github.com/doitsujin/dxvk.git}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -146,6 +146,9 @@ if [ ! -d "$DXVK_SRC_DIR/.git" ]; then
         --shallow-submodules "$DXVK_REPO" "$DXVK_SRC_DIR"
 else
     echo "==> Re-using cached clone at $DXVK_SRC_DIR"
+    # A previous run left the series applied, so discard those edits before
+    # checking the (possibly new) tag out — git refuses to switch otherwise.
+    git -C "$DXVK_SRC_DIR" checkout -- .
     git -C "$DXVK_SRC_DIR" fetch --depth 1 origin "tag" "v$DXVK_VERSION" || true
     git -C "$DXVK_SRC_DIR" -c advice.detachedHead=false checkout "v$DXVK_VERSION"
     git -C "$DXVK_SRC_DIR" submodule update --init --recursive --depth 1
