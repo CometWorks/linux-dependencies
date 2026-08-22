@@ -31,7 +31,7 @@ for the PE-loader shims.
 | Artefact | Archives | Origin |
 | --- | --- | --- |
 | `libavcodec` / `libavformat` / `libavutil` / `libswresample` / `libswscale` | SE1 | FFmpeg 8.1, built from the upstream release tarball |
-| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 2.7.1 + the `Patches/dxvk/` series, built once from the upstream git tag |
+| `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 3.0.2 + the `Patches/dxvk/` series, built once from the upstream git tag |
 | `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | SE2 | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series |
 | `libSDL3.so` | both | SDL3 3.4.12, built once from the upstream release tag; DXVK compiles against its headers and dlopens it at runtime |
 | `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |

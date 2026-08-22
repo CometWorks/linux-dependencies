@@ -19,7 +19,7 @@ their own archive, consumed alongside either game archive.
 | Artefact | Version | Licence |
 | --- | --- | --- |
 | FFmpeg (`libavcodec`, `libavformat`, `libavutil`, `libswresample`, `libswscale`) | 8.1 | LGPL-2.1-or-later |
-| DXVK Native (`libdxvk_d3d11.so`, `libdxvk_dxgi.so`) + [Patches/dxvk/](Patches/dxvk/) | 2.7.1 | zlib |
+| DXVK Native (`libdxvk_d3d11.so`, `libdxvk_dxgi.so`) + [Patches/dxvk/](Patches/dxvk/) | 3.0.2 | zlib |
 | SDL3 (`libSDL3.so`) — dlopened by DXVK's window-system integration | 3.4.12 | zlib |
 | OpenAL Soft (`libopenal.so`) | 1.25.2 | LGPL-2.0-or-later |
 | `libEOSSDK-Linux-Shipping.so` | vendor blob | proprietary (Epic) |
@@ -28,7 +28,7 @@ their own archive, consumed alongside either game archive.
 
 | Artefact | Version | Licence |
 | --- | --- | --- |
-| DXVK Native — same patched build as above | 2.7.1 | zlib |
+| DXVK Native — same patched build as above | 3.0.2 | zlib |
 | SDL3 — same build as above | 3.4.12 | zlib |
 | vkd3d-proton (`libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so`) + [Patches/vkd3d-proton/](Patches/vkd3d-proton/) | pinned commit | LGPL-2.1 |
 | FMOD Engine (`libfmod.so`, `libfmodstudio.so`) | 2.03.11, matching the game | proprietary (Firelight) |

@@ -25,7 +25,7 @@
 #   2. Scripts/build_sdl3.sh            SDL3 (libSDL3.so), staged into BOTH
 #                                       game staging trees; also supplies the
 #                                       headers the DXVK build compiles against
-#   3. Scripts/build_dxvk.sh            DXVK Native v2.7.1 + Patches/dxvk/
+#   3. Scripts/build_dxvk.sh            DXVK Native v3.0.2 + Patches/dxvk/
 #                                       (libdxvk_d3d11.so + libdxvk_dxgi.so)
 #   4. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
 #                                       Patches/vkd3d-proton/, staged straight

@@ -1,5 +1,5 @@
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 0b963ae..9ad284b 100644
+index cbcc3c6..b761c9c 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
 @@ -179,7 +179,7 @@ namespace dxvk {

@@ -1,5 +1,5 @@
 diff --git a/include/native/windows/windows_base.h b/include/native/windows/windows_base.h
-index f008a53..2b9195d 100644
+index 8650d2e..495ad63 100644
 --- a/include/native/windows/windows_base.h
 +++ b/include/native/windows/windows_base.h
 @@ -27,7 +27,10 @@ typedef int32_t *LPLONG;
@@ -14,20 +14,59 @@ index f008a53..2b9195d 100644
  typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
  typedef unsigned char UCHAR, *PUCHAR;
  
-@@ -131,9 +134,9 @@ typedef UINT_PTR* PUINT_PTR;
+@@ -130,7 +133,7 @@ typedef UINT_PTR* PUINT_PTR;
  #endif /*STRICT*/
  
  typedef char* LPSTR;
--typedef wchar_t* LPWSTR;
-+typedef WCHAR* LPWSTR;
- typedef const char* LPCSTR;
 -typedef const wchar_t* LPCWSTR;
 +typedef const WCHAR* LPCWSTR;
  
  typedef struct LUID {
    DWORD LowPart;
+diff --git a/src/d3d11/d3d11_fence.cpp b/src/d3d11/d3d11_fence.cpp
+index 1ae07f7..7078f3e 100644
+--- a/src/d3d11/d3d11_fence.cpp
++++ b/src/d3d11/d3d11_fence.cpp
+@@ -80,10 +80,14 @@ namespace dxvk {
+     WCHAR buffer[MAX_PATH];
+     UNICODE_STRING name_str;
+     if (lpName) {
+-        DWORD session, len, name_len = wcslen(lpName);
++        // WCHAR is a 16-bit type on the native build, so the wchar_t-typed
++        // wcslen/swprintf cannot be used here; the prefix is formatted as
++        // UTF-8 and transcoded into the Windows-ABI buffer instead.
++        DWORD session, len, name_len = str::length(lpName);
+ 
+         ProcessIdToSessionId(GetCurrentProcessId(), &session);
+-        len = swprintf(buffer, ARRAYSIZE(buffer), L"\\Sessions\\%u\\BaseNamedObjects\\", session);
++        std::string prefix = str::format("\\Sessions\\", session, "\\BaseNamedObjects\\");
++        len = str::transcodeString(buffer, ARRAYSIZE(buffer), prefix.c_str(), prefix.size());
+         memcpy(buffer + len, lpName, (name_len + 1) * sizeof(WCHAR));
+         name_str.MaximumLength = name_str.Length = (len + name_len) * sizeof(WCHAR);
+         name_str.MaximumLength += sizeof(WCHAR);
+diff --git a/src/d3d11/d3d11_resource.cpp b/src/d3d11/d3d11_resource.cpp
+index 8f2bc99..f06f436 100644
+--- a/src/d3d11/d3d11_resource.cpp
++++ b/src/d3d11/d3d11_resource.cpp
+@@ -308,10 +308,14 @@ namespace dxvk {
+     WCHAR buffer[MAX_PATH];
+     UNICODE_STRING name_str;
+     if (lpName) {
+-        DWORD session, len, name_len = wcslen(lpName);
++        // WCHAR is a 16-bit type on the native build, so the wchar_t-typed
++        // wcslen/swprintf cannot be used here; the prefix is formatted as
++        // UTF-8 and transcoded into the Windows-ABI buffer instead.
++        DWORD session, len, name_len = str::length(lpName);
+ 
+         ProcessIdToSessionId(GetCurrentProcessId(), &session);
+-        len = swprintf(buffer, ARRAYSIZE(buffer), L"\\Sessions\\%u\\BaseNamedObjects\\", session);
++        std::string prefix = str::format("\\Sessions\\", session, "\\BaseNamedObjects\\");
++        len = str::transcodeString(buffer, ARRAYSIZE(buffer), prefix.c_str(), prefix.size());
+         memcpy(buffer + len, lpName, (name_len + 1) * sizeof(WCHAR));
+         name_str.MaximumLength = name_str.Length = (len + name_len) * sizeof(WCHAR);
+         name_str.MaximumLength += sizeof(WCHAR);
 diff --git a/src/dxgi/dxgi_adapter.cpp b/src/dxgi/dxgi_adapter.cpp
-index c9160dc..47c93c8 100644
+index 259c782..177510c 100644
 --- a/src/dxgi/dxgi_adapter.cpp
 +++ b/src/dxgi/dxgi_adapter.cpp
 @@ -17,6 +17,13 @@
