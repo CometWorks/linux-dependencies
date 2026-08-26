@@ -54,6 +54,32 @@ Same shape as DXVK: set `VKD3D_PROTON_COMMIT` in
 provenance notes. The current pin is the upstream state the SE2 port's patch
 series was developed against, so treat a bump as requiring an SE2 smoke test.
 
+## Bumping DXC
+
+`Scripts/build_dxc.sh` pins both `DXC_TAG` and `DXC_COMMIT`; set the two
+together, since the script fails if the tag does not resolve to the SHA.
+
+1. Stay on the **stable** line. Every `v1.10.x` release is flagged as a
+   prerelease upstream (Shader Model 6.10 preview) and `v1.10.2605.24` was
+   seen aborting inside LLVM while compiling SE2's Render12 shaders.
+2. Read upstream's release notes for breaking HLSL changes and check SE2's
+   shader sources against them — `v1.9.2607` disallowing `volatile` is the
+   kind of change that matters.
+3. Re-check `Sources/dxc-bridge/DxcCompilerBridge.cpp` against the new
+   `include/dxc/dxcapi.h`. The shim derives from those COM interfaces, so an
+   interface gaining a method is a **silent ABI break, not a compile error**.
+4. Rebuild and smoke-test SE2 shader compilation. `DXC_KEEP_BUILD_TREE=1`
+   makes the 30–60 minute build reusable while iterating.
+5. Refresh `Licenses/se2/DXC-README.txt` (it names the tag and commit),
+   `Licenses/se2/DXC-LICENSE.txt` if upstream's `LICENSE.TXT` changed, and
+   `Licenses/se2/DXC-BUNDLED-LICENSES.txt` if the SPIRV-Tools, SPIRV-Headers
+   or DirectX-Headers submodule licences changed.
+6. The shipped file names stay bare, so no expected-file list changes.
+
+Editing the shim alone needs no version bump: its SHA-256 is part of
+`build/dxc.stamp`, so the next build rebuilds it (and only it, if the clone
+is still cached and `DXC_KEEP_BUILD_TREE=1` preserved the build tree).
+
 ## Changing a patch series
 
 Add, edit or remove `Patches/<dep>/NNNN-*.patch` files; each series' hash is

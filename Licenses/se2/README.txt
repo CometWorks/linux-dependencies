@@ -19,6 +19,17 @@ Files in this directory:
                                   libvkd3d-proton-d3d12*.so
     vkd3d-proton-README.txt       Build provenance + LGPL relinking notes
                                   (patch series under Patches/vkd3d-proton/)
+    DXC-LICENSE.txt               LLVM Release License (University of
+                                  Illinois/NCSA), with MIT-licensed portions,
+                                  covering libdxcompiler.so — the verbatim
+                                  LICENSE.TXT of the pinned DXC source tree
+    DXC-BUNDLED-LICENSES.txt      Apache-2.0, Khronos and MIT texts for
+                                  SPIRV-Tools, SPIRV-Headers and
+                                  DirectX-Headers, which are statically
+                                  linked into libdxcompiler.so
+    DXC-README.txt                Build provenance for libdxcompiler.so and
+                                  the first-party libSE2DxcCompiler.so shim
+                                  in front of it; why libdxil.so is absent
     FMOD-EULA.txt                 FMOD End User License Agreement covering
                                   libfmod.so and libfmodstudio.so
                                   (proprietary, Firelight Technologies)

@@ -1,19 +1,26 @@
 name: Build
 
-# Builds the Space Engineers Linux binary dependencies (FFmpeg, DXVK Native,
-# vkd3d-proton, OpenAL Soft, Steamworks.NET) and publishes them, together
-# with the committed vendor blobs and the third-party licence texts, as
-# three tar.gz release assets:
+# Builds the Space Engineers Linux binary dependencies (FFmpeg, SDL3, DXVK
+# Native, vkd3d-proton, the DirectX Shader Compiler, OpenAL Soft,
+# Steamworks.NET) and publishes them, together with the committed vendor
+# blobs and the third-party licence texts, as three tar.gz release assets:
 #
 #   * se1-dependencies.tar.gz    Space Engineers 1 — consumed by Pulsar for
 #                                Linux and Magnetar.
 #   * se2-dependencies.tar.gz    Space Engineers 2 — the same patched DXVK
-#                                build plus vkd3d-proton and the FMOD runtime.
+#                                build plus vkd3d-proton, the DirectX Shader
+#                                Compiler with the first-party ABI shim in
+#                                front of it, and the FMOD runtime.
 #   * steam-dependencies.tar.gz  Steamworks.NET.dll + libsteam_api.so,
 #                                consumed alongside either of the above.
 #
-# DXVK is built once with its Patches/ series applied; the identical
-# binaries ship in both game archives. vkd3d-proton is SE2-only.
+# DXVK and SDL3 are built once; the identical binaries ship in both game
+# archives. vkd3d-proton and the DXC pair are SE2-only.
+#
+# Wall-clock is dominated by the DirectX Shader Compiler at 30-60 minutes,
+# several times the rest of the pipeline combined. Scripts/build_dxc.sh
+# deletes its cmake build tree once the two libraries are staged, so the peak
+# disk footprint stays within a hosted runner's budget.
 #
 #   * push to main        -> build, then publish a PUBLIC release tagged
 #                            v1.0.<run_number> and marked "latest".
@@ -76,9 +83,13 @@ jobs:
           #          the build would silently produce an OpenAL with no audio
           #          backends; build_openal.sh passes ALSOFT_REQUIRE_* so a
           #          missing one fails the configure instead.
+          # cmake/ninja-build/python3 -> the DirectX Shader Compiler, and the
+          #          SE2 ABI shim g++ builds against its headers in the same
+          #          step (Scripts/build_dxc.sh). ubuntu-24.04's cmake 3.28
+          #          clears the >= 3.20 floor DXC needs.
           # patchelf/binutils -> DT_RUNPATH patching + readelf verification
           sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config make cmake curl tar git \
+            build-essential pkg-config make cmake python3 curl tar git \
             nasm patchelf binutils zlib1g-dev \
             meson ninja-build glslang-tools libvulkan-dev mingw-w64-tools \
             libpulse-dev libasound2-dev libpipewire-0.3-dev \

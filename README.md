@@ -31,6 +31,8 @@ their own archive, consumed alongside either game archive.
 | DXVK Native — same patched build as above | 3.0.2 | zlib |
 | SDL3 — same build as above | 3.4.12 | zlib |
 | vkd3d-proton (`libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so`) + [Patches/vkd3d-proton/](Patches/vkd3d-proton/) | pinned commit | LGPL-2.1 |
+| DirectX Shader Compiler (`libdxcompiler.so`) — built from source, not the Microsoft prebuilt | v1.9.2607 | NCSA/LLVM Release License |
+| SE2 DXC ABI shim (`libSE2DxcCompiler.so`) — first-party, source in [Sources/dxc-bridge/](Sources/dxc-bridge/) | built against the DXC pin above | MIT |
 | FMOD Engine (`libfmod.so`, `libfmodstudio.so`) | 2.03.11, matching the game | proprietary (Firelight) |
 
 ### `steam-dependencies.tar.gz` — Steam integration
@@ -42,6 +44,13 @@ their own archive, consumed alongside either game archive.
 
 Everything, plus the third-party licence texts, is published as release
 assets on every release.
+
+The SE2 archive deliberately does **not** carry `libdxil.so`, the DXIL
+signing validator that ships with Microsoft's DXC release download. It is
+never loaded, its hashing function is compiled into `libdxcompiler.so`
+already, and it has no buildable source — leaving it out is what makes the
+whole SE2 payload build from source. See
+[docs/dependencies.md](docs/dependencies.md#why-libdxilso-is-not-shipped).
 
 The native wrapper libraries — SE1's PE-loader shims (`libD3DCompiler.so`,
 `libHavok.so`, `libRecastDetour.so`, `libVRageNative.so`) and SE2's
