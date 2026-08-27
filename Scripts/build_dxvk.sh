@@ -34,6 +34,11 @@
 # Usage:
 #   ./build_dxvk.sh           Build (or no-op if cached).
 #   ./build_dxvk.sh --clean   Wipe build dirs and rebuild from scratch.
+#   ./build_dxvk.sh --print-stamp
+#                             Print this build's cache stamp and exit without
+#                             touching the network. The value is the content
+#                             key CI caches the staged libraries under; see
+#                             docs/building.md.
 #
 # SDL3 is required to build (see build_sdl3.sh, which this script invokes):
 # DXVK Native's window-system integration compiles against SDL3 headers and
@@ -78,10 +83,12 @@ STAMP_FILE="$BUILD_DIR/dxvk.stamp"
 EXPECTED_LIBS=(libdxvk_d3d11.so libdxvk_dxgi.so)
 
 CLEAN=0
+PRINT_STAMP=0
 for arg in "$@"; do
     case "$arg" in
-        --clean)   CLEAN=1 ;;
-        -h|--help) sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --clean)       CLEAN=1 ;;
+        --print-stamp) PRINT_STAMP=1 ;;
+        -h|--help) sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
@@ -103,6 +110,11 @@ else
     PATCH_HASH="no-patches"
 fi
 STAMP_CONTENT="$DXVK_VERSION patches=$PATCH_HASH"
+
+if [ "$PRINT_STAMP" = "1" ]; then
+    printf '%s\n' "$STAMP_CONTENT"
+    exit 0
+fi
 
 # ---- preflight --------------------------------------------------------------
 

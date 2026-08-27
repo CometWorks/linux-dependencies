@@ -29,6 +29,11 @@
 # Usage:
 #   ./build_openal.sh           Build (or no-op if cached).
 #   ./build_openal.sh --clean   Wipe build dirs and rebuild from scratch.
+#   ./build_openal.sh --print-stamp
+#                               Print this build's cache stamp and exit without
+#                               touching the network. The value is the content
+#                               key CI caches the staged libraries under; see
+#                               docs/building.md.
 #
 # Env-var overrides (defaults shown):
 #   OPENAL_VERSION = 1.25.2
@@ -56,6 +61,7 @@ OPENAL_SRC_DIR="$BUILD_DIR/openal-soft-$OPENAL_VERSION"
 OPENAL_BUILD_DIR="$OPENAL_SRC_DIR/_build"
 STAGE_DIR="$OPENAL_BUILD_DIR/_install"
 STAMP_FILE="$BUILD_DIR/openal.stamp"
+STAMP_CONTENT="$OPENAL_VERSION"
 
 OPENAL_URL="https://openal-soft.org/openal-releases/openal-soft-$OPENAL_VERSION.tar.bz2"
 
@@ -65,13 +71,20 @@ OPENAL_URL="https://openal-soft.org/openal-releases/openal-soft-$OPENAL_VERSION.
 EXPECTED_SONAME="libopenal.so.1"
 
 CLEAN=0
+PRINT_STAMP=0
 for arg in "$@"; do
     case "$arg" in
-        --clean)   CLEAN=1 ;;
-        -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --clean)       CLEAN=1 ;;
+        --print-stamp) PRINT_STAMP=1 ;;
+        -h|--help) sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
+
+if [ "$PRINT_STAMP" = "1" ]; then
+    printf '%s\n' "$STAMP_CONTENT"
+    exit 0
+fi
 
 # ---- preflight --------------------------------------------------------------
 
@@ -91,7 +104,7 @@ if [ "$CLEAN" = "1" ]; then
 elif [ -e "$LIBRARIES_DIR/libopenal.so" ] \
    && [ ! -L "$LIBRARIES_DIR/libopenal.so" ] \
    && [ -f "$STAMP_FILE" ] \
-   && [ "$(cat "$STAMP_FILE")" = "$OPENAL_VERSION" ]; then
+   && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
     echo "==> Cached build matches OpenAL Soft $OPENAL_VERSION; skipping rebuild"
     ( cd "$LIBRARIES_DIR" && ls -1 libopenal.so* )
     exit 0
@@ -253,7 +266,7 @@ find "$LIBRARIES_DIR" -maxdepth 1 -name 'libopenal.so*' -delete
 
 install -m 0755 "$REAL_LIB" "$LIBRARIES_DIR/libopenal.so"
 
-printf '%s\n' "$OPENAL_VERSION" > "$STAMP_FILE"
+printf '%s\n' "$STAMP_CONTENT" > "$STAMP_FILE"
 
 echo
 echo "==> Staged OpenAL Soft $OPENAL_VERSION into $LIBRARIES_DIR:"

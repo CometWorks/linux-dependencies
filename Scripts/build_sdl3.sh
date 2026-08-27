@@ -47,6 +47,11 @@
 # Usage:
 #   ./build_sdl3.sh           Build (or no-op if cached) and stage.
 #   ./build_sdl3.sh --clean   Wipe build dirs and rebuild from scratch.
+#   ./build_sdl3.sh --print-stamp
+#                             Print this build's cache stamp and exit without
+#                             touching the network. The value is the content
+#                             key CI caches the staged libraries under; see
+#                             docs/building.md.
 #
 # On success the prefix is at $SDL3_PREFIX and its pkgconfig dir is
 # $SDL3_PREFIX/lib/pkgconfig (build_dxvk.sh prepends that to PKG_CONFIG_PATH).
@@ -93,16 +98,23 @@ EXPECTED_SONAME="libSDL3.so.0"
 # before the change is rebuilt rather than re-staged: the tag alone would
 # still match and the old, differently-configured library would ship.
 CONFIG_REV="2"
-STAMP_VALUE="$SDL3_TAG config$CONFIG_REV"
+STAMP_CONTENT="$SDL3_TAG config$CONFIG_REV"
 
 CLEAN=0
+PRINT_STAMP=0
 for arg in "$@"; do
     case "$arg" in
-        --clean)   CLEAN=1 ;;
-        -h|--help) sed -n '2,64p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --clean)       CLEAN=1 ;;
+        --print-stamp) PRINT_STAMP=1 ;;
+        -h|--help) sed -n '2,69p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
+
+if [ "$PRINT_STAMP" = "1" ]; then
+    printf '%s\n' "$STAMP_CONTENT"
+    exit 0
+fi
 
 # ---- preflight --------------------------------------------------------------
 
@@ -126,7 +138,7 @@ if [ "$CLEAN" = "1" ]; then
     rm -rf "$SDL3_SRC_DIR" "$SDL3_PREFIX"
 elif [ -f "$PC_FILE" ] \
    && [ -f "$STAMP_FILE" ] \
-   && [ "$(cat "$STAMP_FILE")" = "$STAMP_VALUE" ]; then
+   && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
     echo "==> Cached SDL3 matches $SDL3_TAG; skipping rebuild"
     echo "==> Prefix: $SDL3_PREFIX"
     SKIP_BUILD=1
@@ -222,7 +234,7 @@ if [ "$DRIVER_MISSING" = "1" ]; then
 fi
 echo "==> Video drivers present: X11, Wayland, Vulkan"
 
-printf '%s\n' "$STAMP_VALUE" > "$STAMP_FILE"
+printf '%s\n' "$STAMP_CONTENT" > "$STAMP_FILE"
 
 fi  # SKIP_BUILD
 

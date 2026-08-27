@@ -14,6 +14,8 @@ are shared byte-identically between the two game archives.
 | DXVK Native + `Patches/dxvk/` series | both | tag `v3.0.2` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
 | SDL3 | both | tag `release-3.4.12` | zlib | `Scripts/build_sdl3.sh` |
 | vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
+| DirectX Shader Compiler | SE2 | tag `v1.9.2607` (commit `0d3ee6b5…`) | NCSA/LLVM Release License | `Scripts/build_dxc.sh` |
+| SE2 DXC ABI shim (`Sources/dxc-bridge/`) | SE2 | first-party, built against the DXC pin above | MIT | `Scripts/build_dxc.sh` |
 | OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
 | Steamworks.NET | Steam | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
@@ -23,6 +25,11 @@ are shared byte-identically between the two game archives.
 SDL3 has a double role: it supplies the headers DXVK compiles against *and*
 ships as `libSDL3.so`, because DXVK's window-system integration dlopens it at
 runtime. See [SDL3](#sdl3-3412).
+
+Every entry above is third-party code except the DXC ABI shim, which is the
+only shipped binary compiled from source that lives in this repository. It is
+built in the same step as the compiler it wraps, for the reasons in
+[DirectX Shader Compiler](#directx-shader-compiler-v192607-se2-archive-only).
 
 ---
 
@@ -241,6 +248,125 @@ Being LGPL-2.1, the SE2 archive carries `LICENSES/VKD3D-LGPL-2.1.txt` plus
 
 ---
 
+## DirectX Shader Compiler v1.9.2607 (SE2 archive only)
+
+**Produces:** two files, staged straight into `build/Libraries-SE2/`:
+
+| File | What it is |
+| --- | --- |
+| `libdxcompiler.so` | upstream DXC, built from source, unpatched |
+| `libSE2DxcCompiler.so` | the first-party ABI shim in front of it, built from [Sources/dxc-bridge/](../Sources/dxc-bridge/) |
+
+**Source:** `https://github.com/microsoft/DirectXShaderCompiler.git` at tag
+`v1.9.2607`, commit `0d3ee6b551b8fa768fbf825300ebab81047ef6a8`, cached under
+`build/dxc/`. The tag ref is fetched rather than the bare SHA, because the
+build's `LLVM_APPEND_VC_REV` runs `git describe` to fold the tag into
+`PACKAGE_VERSION`; the script then asserts that the tag really resolves to
+the pinned SHA, so a moved tag fails the build instead of shipping quietly.
+
+**Consumed by:** the Space Engineers 2 client. SE2 compiles all of its
+shaders at runtime through `Vortice.Dxc`, which P/Invokes `DxcCreateInstance`
+from `dxcompiler.dll`; the Linux port redirects that to
+`libSE2DxcCompiler.so`. Space Engineers 1 uses D3DCompiler, not DXC, so
+neither file goes into the SE1 archive.
+
+### Why this pin
+
+`v1.9.2607` (2026-07-29) is the newest *stable* release. The whole `v1.10.x`
+line is the Shader Model 6.10 preview branch and every release on it is
+flagged as a prerelease upstream; `v1.10.2605.24` was observed aborting
+inside LLVM (`User::allocHungoffUses`) while compiling SE2's Render12
+shaders. Do not bump onto it.
+
+Moving up from the previously shipped `v1.9.2602.24` prebuilt is safe for
+SE2: the only breaking HLSL change in `v1.9.2607` is that the `volatile`
+keyword is no longer accepted, and none of SE2's 660 shader source files use
+it.
+
+### Why the shim exists
+
+DXC's Linux `WCHAR` is the platform `wchar_t`, which is 4 bytes.
+`Vortice.Dxc` marshals every string as the Windows 2-byte wire type. The two
+ABIs disagree at every string argument and every string-returning interface,
+so `libSE2DxcCompiler.so` sits in between: it exports the two
+`DxcCreateInstance` entry points, forwards them to the real compiler, and
+wraps `IDxcCompiler3`, `IDxcResult` and the caller's include handler to
+convert strings across the boundary.
+
+Building DXC with `-fshort-wchar` instead — making the whole library speak
+2-byte `WCHAR` so no shim is needed — does not work. `libdxcompiler.so`
+imports eight wide-char functions from glibc (`wcslen`, `wcscmp`, `wcsncmp`,
+`wcsncpy`, `wmemcmp`, `wmemcpy`, `mbstowcs`, `wcstombs`), and a 2-byte
+`wchar_t` build would silently mismatch every one of them.
+
+The shim reimplements COM vtables by deriving from the interfaces in
+`<dxc/dxcapi.h>`, so its layout is bound to the DXC version it wraps. That is
+why it is built in this step, against the headers of the tree just compiled,
+rather than living in a consuming repository: an interface gaining a method
+upstream is a silent ABI break, not a compile error, and splitting the two
+across repositories is how that drift goes unnoticed. See
+[Sources/dxc-bridge/README.md](../Sources/dxc-bridge/README.md).
+
+The shim resolves its backend by SONAME (`libdxcompiler.so`) through its own
+`DT_RUNPATH` of `$ORIGIN`, so it always finds the copy staged beside it.
+`SE2_DXCOMPILER_BACKEND` overrides that with an explicit path for debugging.
+
+### Why `libdxil.so` is not shipped
+
+The Microsoft prebuilt release carries a third file, `libdxil.so`, the
+signing validator. It is deliberately absent here, on three grounds:
+
+* **It is not used.** Compiling a shader with `libdxil.so` beside
+  `libdxcompiler.so` and again with it absent produces byte-identical
+  containers carrying the same non-zero DXIL hash, and `LD_DEBUG=libs` shows
+  it is never `dlopen`ed either way.
+* **It is not needed.** Microsoft open-sourced the DXIL validator hash, so
+  `ComputeHashRetail` is compiled directly into `libdxcompiler.so` —
+  `readelf -sW` shows it as a locally defined function there.
+* **It is not buildable.** `libdxil.so` exists only as a prebuilt release
+  artefact. Dropping it is what makes a payload that is entirely built from
+  source possible, and with it the Microsoft binary distribution terms that
+  used to apply.
+
+### How it is built
+
+A cmake + ninja release build driven by DXC's own
+`cmake/caches/PredefinedParams.cmake`, with assertions and both test suites
+turned off, building only the `dxcompiler` target — not the `dxc` driver
+executable. Flag order in the `cmake` invocation is load-bearing: the cache
+file's `set()`s are non-`FORCE`, so a `-D` overrides them only when it
+appears *before* the `-C`.
+
+The SPIR-V backend is dead weight for SE2, which never passes `-spirv`, but
+it cannot be switched off: DXC's root `CMakeLists.txt` does an unconditional
+`if(NOT WIN32) set(ENABLE_SPIRV_CODEGEN ON) endif()` that shadows both the
+cache and the command line. `external/SPIRV-Headers` and
+`external/SPIRV-Tools` therefore have to be initialised along with
+`external/DirectX-Headers` (which DXC requires on any non-Windows target).
+Only `external/googletest` stays uncloned, because the test suites are off.
+
+SPIRV-Tools is statically linked into the shipped `libdxcompiler.so`, so the
+SE2 archive also carries `LICENSES/DXC-BUNDLED-LICENSES.txt` with the
+Apache-2.0, Khronos and MIT texts for SPIRV-Tools, SPIRV-Headers and
+DirectX-Headers, next to `LICENSES/DXC-LICENSE.txt` and
+`LICENSES/DXC-README.txt`.
+
+The build is about 19 minutes on a GitHub-hosted 4-vCPU runner, and by far
+the longest step in the pipeline — more than everything else combined. The cmake build tree (~270 MB) is deleted once the
+outputs are staged; set `DXC_KEEP_BUILD_TREE=1` to keep it when iterating.
+The clone itself (~250 MB) stays, because the shim compiles against its
+headers.
+
+### Post-build verification
+
+The script asserts that the generated `include/llvm/Config/config.h` reads
+`PACKAGE_VERSION "3.7-v1.9.2607"` before deleting the build tree. The
+corresponding runtime string is *not* checkable with `strings` on the
+finished `.so`: those literals end up in an unterminated 16-byte merged
+constant pool where the tag reads back truncated as `3.7-v1.9.26`.
+
+---
+
 ## OpenAL Soft 1.25.2
 
 **Produces:** `libopenal.so` — the real file under the bare name. The SONAME
@@ -367,3 +493,9 @@ into the archive as `LICENSES/`. They travel with the binaries so that any
 bundle built from this archive carries the attribution its licences require —
 in particular the LGPL notice for FFmpeg, which must point at the build
 configuration used to produce the shipped libraries.
+
+Every SE2 payload is now either built from source or a clearly identified
+vendor blob (FMOD). Nothing in the archive is redistributed under a binary
+EULA that this repository cannot also supply the sources for, which is the
+practical consequence of building DXC rather than unpacking Microsoft's
+release download.

@@ -54,6 +54,32 @@ Same shape as DXVK: set `VKD3D_PROTON_COMMIT` in
 provenance notes. The current pin is the upstream state the SE2 port's patch
 series was developed against, so treat a bump as requiring an SE2 smoke test.
 
+## Bumping DXC
+
+`Scripts/build_dxc.sh` pins both `DXC_TAG` and `DXC_COMMIT`; set the two
+together, since the script fails if the tag does not resolve to the SHA.
+
+1. Stay on the **stable** line. Every `v1.10.x` release is flagged as a
+   prerelease upstream (Shader Model 6.10 preview) and `v1.10.2605.24` was
+   seen aborting inside LLVM while compiling SE2's Render12 shaders.
+2. Read upstream's release notes for breaking HLSL changes and check SE2's
+   shader sources against them — `v1.9.2607` disallowing `volatile` is the
+   kind of change that matters.
+3. Re-check `Sources/dxc-bridge/DxcCompilerBridge.cpp` against the new
+   `include/dxc/dxcapi.h`. The shim derives from those COM interfaces, so an
+   interface gaining a method is a **silent ABI break, not a compile error**.
+4. Rebuild and smoke-test SE2 shader compilation. `DXC_KEEP_BUILD_TREE=1`
+   makes the ~19 minute build reusable while iterating.
+5. Refresh `Licenses/se2/DXC-README.txt` (it names the tag and commit),
+   `Licenses/se2/DXC-LICENSE.txt` if upstream's `LICENSE.TXT` changed, and
+   `Licenses/se2/DXC-BUNDLED-LICENSES.txt` if the SPIRV-Tools, SPIRV-Headers
+   or DirectX-Headers submodule licences changed.
+6. The shipped file names stay bare, so no expected-file list changes.
+
+Editing the shim alone needs no version bump: its SHA-256 is part of
+`build/dxc.stamp`, so the next build rebuilds it (and only it, if the clone
+is still cached and `DXC_KEEP_BUILD_TREE=1` preserved the build tree).
+
 ## Changing a patch series
 
 Add, edit or remove `Patches/<dep>/NNNN-*.patch` files; each series' hash is
@@ -155,6 +181,25 @@ the game ships, so the blobs must match it at least to the minor release.
    [consuming.md](consuming.md#the-se2-archive).
 4. Commit and push.
 
+## Cache stamps and the CI cache
+
+Every `Scripts/build_*.sh` computes a stamp that identifies its output — the
+pin, plus the patch series or first-party source that goes into it — writes it
+to `build/<dep>.stamp` on success, and skips the whole build when the stamp
+and the staged files still match. CI keys its artefact cache on the same value
+via `--print-stamp`, so **anything that changes the output must be reflected
+in the stamp**. Bumping a pin does that automatically; so does editing a patch
+series, `Sources/dxc-bridge/DxcCompilerBridge.cpp`, or FFmpeg's
+`FFMPEG_CONFIGURE_FLAGS`.
+
+The one stamp that is **not** automatic is SDL3's `CONFIG_REV` in
+`Scripts/build_sdl3.sh`: its cmake options are not hashed, so changing them
+means bumping that counter by hand. Forgetting to leaves an existing build
+tree — and CI's cache — serving a differently configured library.
+
+If you add a build script, give it a stamp, a `--print-stamp` flag, and an
+entry in the workflow's `CACHE_PATHS_*` block plus its restore/save pair.
+
 ## Changing the archive layout
 
 The archive layouts are a contract with the consumers — see
@@ -180,9 +225,16 @@ against. Moving to a newer image raises the minimum glibc for every downstream
 user, so treat it as a compatibility decision, not routine housekeeping, and
 note it in the release notes.
 
+The image name and the runner's gcc/glibc versions are part of every CI cache
+key, so a bump rebuilds everything from scratch — including DXC. Expect one
+very slow run after the change. The old entries are not
+deleted; they age out on their own after a week unused.
+
 ## Checklist for a dependency-version pull request
 
 * [ ] `./build.sh` succeeds from a clean tree (`--clean`)
+* [ ] The dependency's stamp changed, so the CI cache is invalidated
+      (`./Scripts/build_<dep>.sh --print-stamp` before and after)
 * [ ] The `ldd` allow-list and `DT_RUNPATH` assertions pass
 * [ ] `EXPECTED_FILES` in `build.sh` matches what was produced
 * [ ] `docs/dependencies.md` version table updated

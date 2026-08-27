@@ -15,8 +15,8 @@ steam-dependencies.tar.gz   Steamworks.NET.dll + libsteam_api.so, consumed
                             alongside either game archive
 ```
 
-All are gzip-compressed tars built by `build.sh` (roughly 26 MB, 8 MB and
-250 kB). The patched DXVK binaries and `libSDL3.so` are **byte-identical
+All are gzip-compressed tars built by `build.sh` (roughly 29 MB, 25 MB and
+250 kB — the SE2 archive more than doubled when DXC joined it). The patched DXVK binaries and `libSDL3.so` are **byte-identical
 across the two game archives** — built once, staged into both trees.
 
 Download the latest with (same pattern for the other two assets):
@@ -101,8 +101,15 @@ libdxvk_dxgi.so               identical to the SE1 archive's copy
 libSDL3.so                    identical to the SE1 archive's copy
 libvkd3d-proton-d3d12.so      patched, see Patches/vkd3d-proton/ (SE2 only)
 libvkd3d-proton-d3d12core.so  patched (SE2 only)
+libdxcompiler.so              DirectX Shader Compiler v1.9.2607, built from
+                              source, unpatched (SE2 only)
+libSE2DxcCompiler.so          first-party ABI shim in front of it, source at
+                              Sources/dxc-bridge/ (SE2 only)
 libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
 libfmodstudio.so              FMOD Studio API runtime (unmodified vendor blob)
+LICENSES/DXC-BUNDLED-LICENSES.txt
+LICENSES/DXC-LICENSE.txt
+LICENSES/DXC-README.txt
 LICENSES/DXVK-LICENSE.txt
 LICENSES/FMOD-EULA.txt
 LICENSES/FMOD-NOTICE.txt
@@ -112,6 +119,26 @@ LICENSES/SDL3-README.txt
 LICENSES/VKD3D-LGPL-2.1.txt
 LICENSES/vkd3d-proton-README.txt
 ```
+
+**`libdxil.so` is deliberately absent.** Microsoft's DXC release download
+carries it as the DXIL signing validator; it is not needed here. The
+validator hash is compiled into `libdxcompiler.so`, which never `dlopen`s
+it — containers produced with and without it present are byte-identical,
+signature included. Consumers that used to stage all three files should drop
+it rather than sourcing it elsewhere; see
+[dependencies.md](dependencies.md#why-libdxilso-is-not-shipped).
+
+**The DXC pair links against nothing exotic.** `libdxcompiler.so` and
+`libSE2DxcCompiler.so` resolve only to glibc, `libstdc++`, `libgcc_s` and
+`libm`, the same floor as the rest of the archive.
+
+**`libSE2DxcCompiler.so` finds its backend by itself.** The shim `dlopen`s
+`libdxcompiler.so` through its own `DT_RUNPATH=$ORIGIN`, so both files simply
+have to be extracted into the same directory — there is no load-order
+requirement and no `LD_LIBRARY_PATH` to set. `SE2_DXCOMPILER_BACKEND`
+overrides the path if a consumer needs to point at a different compiler.
+Consumers must **not** install a `libdxcompiler.so` elsewhere on the loader
+path expecting it to be picked up instead.
 
 The SDL3 SONAME note from the SE1 section applies here too: the SE2 port must
 load `libSDL3.so` from the bundle before DXVK initialises.
@@ -191,8 +218,19 @@ an environment variable; see [consuming.md](consuming.md).
 ## The CI workflow
 
 [`.github/workflows/build.yml`](../.github/workflows/build.yml) installs the
-toolchain, runs `./build.sh`, uploads the archive as a workflow artifact, and
-publishes the release.
+toolchain, restores each dependency's cached output, runs `./build.sh`,
+uploads the archive as a workflow artifact, publishes the release, and saves
+back any cache entry the run had to rebuild.
+
+Caching is keyed on each build script's own cache stamp, obtained with
+`--print-stamp`, so a run only pays for what actually changed: a run whose
+dependencies are all unchanged builds nothing and packages all three archives
+in seconds. The archives it publishes are the same bytes a cold build would
+produce — a cached artefact is a *previous run's output for the identical
+pin, patch series and toolchain*, which is what the reproducibility guarantee
+above already promises. See
+[building.md](building.md#caching-in-ci) for the key format and the
+branch-scoping rules.
 
 It pins **`ubuntu-24.04`** rather than `ubuntu-latest` on purpose. The
 libraries are linked against the runner's glibc, and glibc is backwards but not
@@ -201,4 +239,8 @@ newer, but a silent bump to a future `ubuntu-latest` would raise the minimum
 glibc for every downstream user without any visible change in this repo.
 
 Draft pull requests are skipped so that work in progress does not spend CI
-minutes on a 15-minute FFmpeg and DXVK build.
+minutes on the build — which is now dominated by the DirectX Shader Compiler
+at roughly 19 of its 31 minutes. The
+`build_dxc.sh` step deletes its cmake build tree once the two libraries are
+staged, keeping the job's peak disk use within what a GitHub-hosted runner
+provides.
