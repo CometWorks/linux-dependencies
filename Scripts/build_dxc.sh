@@ -57,6 +57,11 @@
 # Usage:
 #   ./build_dxc.sh           Build (or no-op if cached).
 #   ./build_dxc.sh --clean   Wipe build dirs and rebuild from scratch.
+#   ./build_dxc.sh --print-stamp
+#                            Print this build's cache stamp and exit without
+#                            touching the network. The value is the content key
+#                            CI caches the staged libraries under; see
+#                            docs/building.md.
 #
 # Env-var overrides (defaults shown):
 #   DXC_TAG               = v1.9.2607
@@ -68,9 +73,11 @@
 #   JOBS                  = $(nproc)
 #
 # Requirements: git, cmake (>=3.20), ninja, python3, gcc, g++, patchelf.
-# A full DXC build takes 30-60 minutes on a 16-core machine. Building only the
-# dxcompiler target in release with assertions off keeps the peak footprint
-# around 550 MB, which is what makes it fit on a GitHub-hosted runner.
+# A full DXC build is about 19 minutes on a GitHub-hosted 4-vCPU runner and
+# proportionally less on more cores — still several times the rest of the
+# pipeline put together. Building only the dxcompiler target in release with
+# assertions off keeps the peak footprint around 550 MB, which is what makes
+# it fit on a hosted runner's 14 GB disk.
 
 set -euo pipefail
 
@@ -97,10 +104,12 @@ STAMP_FILE="$BUILD_DIR/dxc.stamp"
 EXPECTED_LIBS=(libdxcompiler.so libSE2DxcCompiler.so)
 
 CLEAN=0
+PRINT_STAMP=0
 for arg in "$@"; do
     case "$arg" in
-        --clean)   CLEAN=1 ;;
-        -h|--help) sed -n '2,73p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --clean)       CLEAN=1 ;;
+        --print-stamp) PRINT_STAMP=1 ;;
+        -h|--help) sed -n '2,80p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
@@ -113,6 +122,11 @@ done
 }
 BRIDGE_HASH="$(sha256sum "$BRIDGE_SRC" | cut -d' ' -f1)"
 STAMP_CONTENT="$DXC_COMMIT bridge=$BRIDGE_HASH"
+
+if [ "$PRINT_STAMP" = "1" ]; then
+    printf '%s\n' "$STAMP_CONTENT"
+    exit 0
+fi
 
 # ---- preflight --------------------------------------------------------------
 
@@ -205,7 +219,7 @@ cmake -S "$SRC_DIR" -B "$CMAKE_BUILD_DIR" -G Ninja \
     -DLLVM_INCLUDE_TESTS=OFF \
     -C "$SRC_DIR/cmake/caches/PredefinedParams.cmake"
 
-echo "==> Building DXC (this takes 30-60 minutes)"
+echo "==> Building DXC (tens of minutes; ~19 on 4 cores)"
 ninja -C "$CMAKE_BUILD_DIR" -j "$JOBS" dxcompiler
 
 DXCOMPILER_SO="$(find -L "$CMAKE_BUILD_DIR" -type f -name libdxcompiler.so -print -quit)"

@@ -69,7 +69,7 @@ together, since the script fails if the tag does not resolve to the SHA.
    `include/dxc/dxcapi.h`. The shim derives from those COM interfaces, so an
    interface gaining a method is a **silent ABI break, not a compile error**.
 4. Rebuild and smoke-test SE2 shader compilation. `DXC_KEEP_BUILD_TREE=1`
-   makes the 30–60 minute build reusable while iterating.
+   makes the ~19 minute build reusable while iterating.
 5. Refresh `Licenses/se2/DXC-README.txt` (it names the tag and commit),
    `Licenses/se2/DXC-LICENSE.txt` if upstream's `LICENSE.TXT` changed, and
    `Licenses/se2/DXC-BUNDLED-LICENSES.txt` if the SPIRV-Tools, SPIRV-Headers
@@ -181,6 +181,25 @@ the game ships, so the blobs must match it at least to the minor release.
    [consuming.md](consuming.md#the-se2-archive).
 4. Commit and push.
 
+## Cache stamps and the CI cache
+
+Every `Scripts/build_*.sh` computes a stamp that identifies its output — the
+pin, plus the patch series or first-party source that goes into it — writes it
+to `build/<dep>.stamp` on success, and skips the whole build when the stamp
+and the staged files still match. CI keys its artefact cache on the same value
+via `--print-stamp`, so **anything that changes the output must be reflected
+in the stamp**. Bumping a pin does that automatically; so does editing a patch
+series, `Sources/dxc-bridge/DxcCompilerBridge.cpp`, or FFmpeg's
+`FFMPEG_CONFIGURE_FLAGS`.
+
+The one stamp that is **not** automatic is SDL3's `CONFIG_REV` in
+`Scripts/build_sdl3.sh`: its cmake options are not hashed, so changing them
+means bumping that counter by hand. Forgetting to leaves an existing build
+tree — and CI's cache — serving a differently configured library.
+
+If you add a build script, give it a stamp, a `--print-stamp` flag, and an
+entry in the workflow's `CACHE_PATHS_*` block plus its restore/save pair.
+
 ## Changing the archive layout
 
 The archive layouts are a contract with the consumers — see
@@ -206,9 +225,16 @@ against. Moving to a newer image raises the minimum glibc for every downstream
 user, so treat it as a compatibility decision, not routine housekeeping, and
 note it in the release notes.
 
+The image name and the runner's gcc/glibc versions are part of every CI cache
+key, so a bump rebuilds everything from scratch — including DXC. Expect one
+very slow run after the change. The old entries are not
+deleted; they age out on their own after a week unused.
+
 ## Checklist for a dependency-version pull request
 
 * [ ] `./build.sh` succeeds from a clean tree (`--clean`)
+* [ ] The dependency's stamp changed, so the CI cache is invalidated
+      (`./Scripts/build_<dep>.sh --print-stamp` before and after)
 * [ ] The `ldd` allow-list and `DT_RUNPATH` assertions pass
 * [ ] `EXPECTED_FILES` in `build.sh` matches what was produced
 * [ ] `docs/dependencies.md` version table updated

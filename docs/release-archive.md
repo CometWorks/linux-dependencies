@@ -218,8 +218,19 @@ an environment variable; see [consuming.md](consuming.md).
 ## The CI workflow
 
 [`.github/workflows/build.yml`](../.github/workflows/build.yml) installs the
-toolchain, runs `./build.sh`, uploads the archive as a workflow artifact, and
-publishes the release.
+toolchain, restores each dependency's cached output, runs `./build.sh`,
+uploads the archive as a workflow artifact, publishes the release, and saves
+back any cache entry the run had to rebuild.
+
+Caching is keyed on each build script's own cache stamp, obtained with
+`--print-stamp`, so a run only pays for what actually changed: a run whose
+dependencies are all unchanged builds nothing and packages all three archives
+in seconds. The archives it publishes are the same bytes a cold build would
+produce — a cached artefact is a *previous run's output for the identical
+pin, patch series and toolchain*, which is what the reproducibility guarantee
+above already promises. See
+[building.md](building.md#caching-in-ci) for the key format and the
+branch-scoping rules.
 
 It pins **`ubuntu-24.04`** rather than `ubuntu-latest` on purpose. The
 libraries are linked against the runner's glibc, and glibc is backwards but not
@@ -229,7 +240,7 @@ glibc for every downstream user without any visible change in this repo.
 
 Draft pull requests are skipped so that work in progress does not spend CI
 minutes on the build — which is now dominated by the DirectX Shader Compiler
-at 30–60 minutes, several times the rest of the pipeline combined. The
+at roughly 19 of its 31 minutes. The
 `build_dxc.sh` step deletes its cmake build tree once the two libraries are
 staged, keeping the job's peak disk use within what a GitHub-hosted runner
 provides.

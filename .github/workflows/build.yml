@@ -17,10 +17,37 @@ name: Build
 # DXVK and SDL3 are built once; the identical binaries ship in both game
 # archives. vkd3d-proton and the DXC pair are SE2-only.
 #
-# Wall-clock is dominated by the DirectX Shader Compiler at 30-60 minutes,
-# several times the rest of the pipeline combined. Scripts/build_dxc.sh
-# deletes its cmake build tree once the two libraries are staged, so the peak
-# disk footprint stays within a hosted runner's budget.
+# Wall-clock on a cold run is about 31 minutes, of which the DirectX Shader
+# Compiler is roughly 19 -- more than everything else put together.
+# Scripts/build_dxc.sh deletes its cmake build tree once the two libraries
+# are staged, so the peak disk footprint stays within the runner's 14 GB.
+#
+# Every dependency's staged output is cached, so a run only pays for what
+# actually changed. The cache key IS the build script's own cache stamp: each
+# Scripts/build_*.sh prints it with --print-stamp, and it already covers the
+# pin, the patch series and any first-party source that goes into the result.
+# Restoring the stamp file next to the staged libraries makes the script's
+# existing "outputs present and stamp matches" check fire, so the step exits
+# without a source tree at all. The whole artefact set is about 50 MB packed,
+# against a 10 GB per-repository budget.
+#
+# The scripts re-derive their stamp on every run and compare, so the key here
+# is only a performance hint: a key that is too loose costs a rebuild, it
+# cannot ship a stale binary. The toolchain is folded in anyway, because the
+# staged libraries are linked against the runner's gcc and glibc and the
+# ubuntu-24.04 image is patched in place.
+#
+# Restore and save are separate steps rather than the combined cache action:
+# the combined one only writes on a fully successful job, so a failure in a
+# late dependency (or in the release step) would throw away everything the
+# run had already built.
+#
+# Note that GitHub scopes caches by branch. A run reads its own branch, the
+# default branch and — for a pull request — the base branch, but a cache
+# written by a pull request lives on that PR's merge ref and cannot be read
+# by main or by any other PR. So a dependency bump is built twice in total:
+# once on the PR, once again on main after the merge. Everything the PR did
+# not touch restores from main's caches either way.
 #
 #   * push to main        -> build, then publish a PUBLIC release tagged
 #                            v1.0.<run_number> and marked "latest".
@@ -52,6 +79,38 @@ jobs:
     # Build on pushes to main and on non-draft PR pushes; never on draft PRs.
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
+    # What each dependency's cache entry holds. Declared once here because
+    # restore and save must be given the identical list, and GitHub Actions
+    # has no YAML anchors. Keep in sync with each script's EXPECTED_LIBS.
+    env:
+      CACHE_PATHS_FFMPEG: |
+        build/ffmpeg.stamp
+        build/Libraries/libavcodec.so
+        build/Libraries/libavformat.so
+        build/Libraries/libavutil.so
+        build/Libraries/libswresample.so
+        build/Libraries/libswscale.so
+      CACHE_PATHS_SDL3: |
+        build/sdl3.stamp
+        build/sdl3-prefix
+      CACHE_PATHS_DXVK: |
+        build/dxvk.stamp
+        build/Libraries/libdxvk_d3d11.so
+        build/Libraries/libdxvk_dxgi.so
+      CACHE_PATHS_VKD3D_PROTON: |
+        build/vkd3d-proton.stamp
+        build/Libraries-SE2/libvkd3d-proton-d3d12.so
+        build/Libraries-SE2/libvkd3d-proton-d3d12core.so
+      CACHE_PATHS_DXC: |
+        build/dxc.stamp
+        build/Libraries-SE2/libdxcompiler.so
+        build/Libraries-SE2/libSE2DxcCompiler.so
+      CACHE_PATHS_OPENAL: |
+        build/openal.stamp
+        build/Libraries/libopenal.so
+      CACHE_PATHS_STEAMWORKS_NET: |
+        build/steamworks-net.stamp
+        build/Libraries-Steam/Steamworks.NET.dll
     steps:
       - uses: actions/checkout@v6
 
@@ -104,11 +163,137 @@ jobs:
           # Steamworks.NET's Standalone3.0 project targets net8.0.
           dotnet-version: '8.0.x'
 
+      # One key per dependency, taken straight from the build script so the CI
+      # key and the on-disk stamp can never disagree. Output names use
+      # underscores because a dash in ${{ steps.x.outputs.NAME }} parses as
+      # subtraction.
+      - name: Compute cache keys
+        id: keys
+        run: |
+          set -euo pipefail
+          toolchain="gcc$(gcc -dumpfullversion)-glibc$(ldd --version | head -1 | awk '{print $NF}')"
+          echo "Toolchain: $toolchain"
+          for dep in ffmpeg sdl3 dxvk vkd3d-proton dxc openal steamworks-net; do
+            stamp="$(bash "Scripts/build_${dep//-/_}.sh" --print-stamp)"
+            digest="$(printf '%s' "$stamp" | sha256sum | cut -c1-32)"
+            key="$dep-ubuntu-24.04-$toolchain-$digest"
+            echo "${dep//-/_}=$key" >> "$GITHUB_OUTPUT"
+            printf '%-16s %s\n         stamp: %s\n' "$dep" "$key" "$stamp"
+          done
+
+      - name: Restore FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.ffmpeg }}
+          path: ${{ env.CACHE_PATHS_FFMPEG }}
+
+      # SDL3 is the one dependency whose cache is a build prefix rather than
+      # the shipped file: build_sdl3.sh caches only its build and re-stages
+      # libSDL3.so into both game trees on every run, from this prefix.
+      - name: Restore SDL3
+        id: cache-sdl3
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.sdl3 }}
+          path: ${{ env.CACHE_PATHS_SDL3 }}
+
+      # Only the SE1 copies of the DXVK libraries are cached; build.sh copies
+      # them into the SE2 tree itself on every run.
+      - name: Restore DXVK
+        id: cache-dxvk
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.dxvk }}
+          path: ${{ env.CACHE_PATHS_DXVK }}
+
+      - name: Restore vkd3d-proton
+        id: cache-vkd3d-proton
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.vkd3d_proton }}
+          path: ${{ env.CACHE_PATHS_VKD3D_PROTON }}
+
+      - name: Restore DXC
+        id: cache-dxc
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.dxc }}
+          path: ${{ env.CACHE_PATHS_DXC }}
+
+      - name: Restore OpenAL Soft
+        id: cache-openal
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.openal }}
+          path: ${{ env.CACHE_PATHS_OPENAL }}
+
+      - name: Restore Steamworks.NET
+        id: cache-steamworks-net
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.steamworks_net }}
+          path: ${{ env.CACHE_PATHS_STEAMWORKS_NET }}
+
       - name: Build dependencies and package the archive
         run: |
           set -euo pipefail
           chmod +x build.sh Scripts/*.sh
           ./build.sh
+
+      # Saved even when a later step fails, so a run never has to redo work it
+      # already finished. A dependency's stamp file is written only after its
+      # libraries are staged, so a half-finished dependency caches without a
+      # stamp and is simply rebuilt next time. Entries are immutable, so a
+      # dependency restored from cache is not re-saved.
+      - name: Save FFmpeg
+        if: ${{ !cancelled() && steps.cache-ffmpeg.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.ffmpeg }}
+          path: ${{ env.CACHE_PATHS_FFMPEG }}
+
+      - name: Save SDL3
+        if: ${{ !cancelled() && steps.cache-sdl3.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.sdl3 }}
+          path: ${{ env.CACHE_PATHS_SDL3 }}
+
+      - name: Save DXVK
+        if: ${{ !cancelled() && steps.cache-dxvk.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.dxvk }}
+          path: ${{ env.CACHE_PATHS_DXVK }}
+
+      - name: Save vkd3d-proton
+        if: ${{ !cancelled() && steps.cache-vkd3d-proton.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.vkd3d_proton }}
+          path: ${{ env.CACHE_PATHS_VKD3D_PROTON }}
+
+      - name: Save DXC
+        if: ${{ !cancelled() && steps.cache-dxc.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.dxc }}
+          path: ${{ env.CACHE_PATHS_DXC }}
+
+      - name: Save OpenAL Soft
+        if: ${{ !cancelled() && steps.cache-openal.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.openal }}
+          path: ${{ env.CACHE_PATHS_OPENAL }}
+
+      - name: Save Steamworks.NET
+        if: ${{ !cancelled() && steps.cache-steamworks-net.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.steamworks_net }}
+          path: ${{ env.CACHE_PATHS_STEAMWORKS_NET }}
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7

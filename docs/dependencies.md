@@ -351,8 +351,8 @@ Apache-2.0, Khronos and MIT texts for SPIRV-Tools, SPIRV-Headers and
 DirectX-Headers, next to `LICENSES/DXC-LICENSE.txt` and
 `LICENSES/DXC-README.txt`.
 
-The build takes 30–60 minutes on a 16-core machine and is by far the longest
-step in the pipeline. The cmake build tree (~270 MB) is deleted once the
+The build is about 19 minutes on a GitHub-hosted 4-vCPU runner, and by far
+the longest step in the pipeline — more than everything else combined. The cmake build tree (~270 MB) is deleted once the
 outputs are staged; set `DXC_KEEP_BUILD_TREE=1` to keep it when iterating.
 The clone itself (~250 MB) stays, because the shim compiles against its
 headers.

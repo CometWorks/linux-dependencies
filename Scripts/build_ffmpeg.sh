@@ -29,6 +29,11 @@
 # Usage:
 #   ./build_ffmpeg.sh           Download (if needed), build, install to LIBRARIES_DIR.
 #   ./build_ffmpeg.sh --clean   Wipe the cached source + build dirs and rebuild.
+#   ./build_ffmpeg.sh --print-stamp
+#                               Print this build's cache stamp and exit without
+#                               touching the network or the build tree. The
+#                               value is the content key CI caches the staged
+#                               libraries under; see docs/building.md.
 #
 # Env-var overrides (defaults shown):
 #   FFMPEG_VERSION   = 8.1
@@ -56,14 +61,55 @@ JOBS="${JOBS:-$(nproc)}"
 
 FFMPEG_TARBALL_URL="https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz"
 
+STAMP_FILE="$BUILD_DIR/ffmpeg.stamp"
+EXPECTED_LIBS=(libavcodec.so libavformat.so libavutil.so
+               libswresample.so libswscale.so)
+
 CLEAN=0
+PRINT_STAMP=0
 for arg in "$@"; do
     case "$arg" in
-        --clean) CLEAN=1 ;;
-        -h|--help) sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --clean)       CLEAN=1 ;;
+        --print-stamp) PRINT_STAMP=1 ;;
+        -h|--help) sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
+
+# The configure flags are half of what determines the shipped binaries, so
+# they belong in the cache stamp. The array lives here, rather than beside
+# the rationale in the configure section below, so --print-stamp can hash it
+# without downloading or extracting anything. --prefix is deliberately NOT
+# part of it: it is a build-tree path, which would make the stamp differ
+# between two machines building the identical thing.
+
+FFMPEG_CONFIGURE_FLAGS=(
+    --cpu=x86-64-v2
+    --enable-shared
+    --disable-static
+    --enable-pic
+    --disable-programs
+    --disable-doc
+    --disable-htmlpages --disable-manpages --disable-podpages --disable-txtpages
+    --disable-debug
+    --disable-network
+    --disable-avdevice --disable-avfilter
+    --disable-vaapi --disable-vdpau
+    --disable-libdrm --disable-xlib
+    --disable-vulkan
+    --disable-bzlib --disable-lzma --disable-iconv
+    --disable-sdl2
+    --disable-alsa
+    --extra-ldflags="-Wl,-Bsymbolic"
+)
+
+CONFIG_HASH="$(printf '%s\n' "${FFMPEG_CONFIGURE_FLAGS[@]}" | sha256sum | cut -d' ' -f1)"
+STAMP_CONTENT="$FFMPEG_VERSION flags=$CONFIG_HASH"
+
+if [ "$PRINT_STAMP" = "1" ]; then
+    printf '%s\n' "$STAMP_CONTENT"
+    exit 0
+fi
 
 # ---- preflight --------------------------------------------------------------
 
@@ -82,10 +128,30 @@ mkdir -p "$LIBRARIES_DIR"
 LIBRARIES_DIR="$(cd "$LIBRARIES_DIR" && pwd)"
 mkdir -p "$(dirname "$FFMPEG_TARBALL")"
 
+# ---- cache check ------------------------------------------------------------
+# Same contract as the sibling build scripts: when the staged libraries are
+# already there and the stamp matches this configuration, there is nothing to
+# do. Skipping the whole step (rather than relying on an incremental `make`)
+# is what lets CI restore the staged files from a cache and move on without a
+# source tree at all.
+
 if [ "$CLEAN" = "1" ]; then
     if [ -d "$FFMPEG_SRC_DIR" ]; then
         echo "==> --clean: wiping cached source tree $FFMPEG_SRC_DIR"
         rm -rf "$FFMPEG_SRC_DIR"
+    fi
+else
+    ALL_LIBS_PRESENT=1
+    for lib in "${EXPECTED_LIBS[@]}"; do
+        [ -e "$LIBRARIES_DIR/$lib" ] || ALL_LIBS_PRESENT=0
+    done
+    if [ "$ALL_LIBS_PRESENT" = "1" ] \
+       && [ -f "$STAMP_FILE" ] \
+       && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
+        echo "==> Cached build matches FFmpeg $FFMPEG_VERSION; skipping rebuild"
+        echo "==> FFmpeg libs already in $LIBRARIES_DIR:"
+        ( cd "$LIBRARIES_DIR" && ls -1 libav*.so* libsw*.so* )
+        exit 0
     fi
 fi
 
@@ -180,35 +246,21 @@ mkdir -p "$STAGE_DIR"
 # --disable-pulse / --disable-jack (these only have --enable-* forms in
 # 8.1; defaults are off, plus avdevice is disabled).
 
-CONFIGURE_FLAGS=(
-    --prefix="$STAGE_DIR"
-    --cpu=x86-64-v2
-    --enable-shared
-    --disable-static
-    --enable-pic
-    --disable-programs
-    --disable-doc
-    --disable-htmlpages --disable-manpages --disable-podpages --disable-txtpages
-    --disable-debug
-    --disable-network
-    --disable-avdevice --disable-avfilter
-    --disable-vaapi --disable-vdpau
-    --disable-libdrm --disable-xlib
-    --disable-vulkan
-    --disable-bzlib --disable-lzma --disable-iconv
-    --disable-sdl2
-    --disable-alsa
-    --extra-ldflags="-Wl,-Bsymbolic"
-    # NOTE: DT_RUNPATH=$ORIGIN is NOT injected via --extra-ldsoflags here -
-    # see the post-install `patchelf` step below for the rationale. Briefly:
-    # passing -Wl,-rpath,'$ORIGIN' through bash -> FFmpeg's configure (sh) ->
-    # config.mak -> make -> recipe shell requires 3 layers of $-escaping to
-    # survive both sh's $$ -> PID substitution and make's $$ -> $ rule, and
-    # the FFmpeg release we build against has historically broken at least
-    # one of those layers (we observed the literal PID "260291ORIGIN"
-    # landing in DT_RUNPATH on FFmpeg 8.1). Doing it as a post-build
-    # patchelf rewrite sidesteps the whole escaping minefield.
-)
+# The flag list itself is defined near the top of this script (see
+# FFMPEG_CONFIGURE_FLAGS) so that --print-stamp can hash it without touching
+# the source tree; only --prefix, which is a build-tree path, is added here.
+#
+# NOTE: DT_RUNPATH=$ORIGIN is NOT injected via --extra-ldsoflags -
+# see the post-install `patchelf` step below for the rationale. Briefly:
+# passing -Wl,-rpath,'$ORIGIN' through bash -> FFmpeg's configure (sh) ->
+# config.mak -> make -> recipe shell requires 3 layers of $-escaping to
+# survive both sh's $$ -> PID substitution and make's $$ -> $ rule, and
+# the FFmpeg release we build against has historically broken at least
+# one of those layers (we observed the literal PID "260291ORIGIN"
+# landing in DT_RUNPATH on FFmpeg 8.1). Doing it as a post-build
+# patchelf rewrite sidesteps the whole escaping minefield.
+
+CONFIGURE_FLAGS=(--prefix="$STAGE_DIR" "${FFMPEG_CONFIGURE_FLAGS[@]}")
 
 # Skip reconfigure if the cached _build/ already has a matching config.h and
 # the configure flags haven't changed (cached in _build/.configure_flags).
@@ -380,6 +432,8 @@ for name in "${!EXPECTED_SOVER[@]}"; do
             "lib${dep}.so.${EXPECTED_SOVER[$dep]}" "lib${dep}.so" "$f"
     done
 done
+
+printf '%s\n' "$STAMP_CONTENT" > "$STAMP_FILE"
 
 echo
 echo "==> Staged FFmpeg libs into $LIBRARIES_DIR:"

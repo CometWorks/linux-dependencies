@@ -49,9 +49,9 @@ the staged trees, and packages `dist/se1-dependencies.tar.gz`,
 `dist/se2-dependencies.tar.gz` and `dist/steam-dependencies.tar.gz`. The
 patched DXVK binaries are copied into the SE2 tree rather than rebuilt.
 
-A cold first run takes roughly 45–80 minutes, dominated by the DirectX
-Shader Compiler — it alone is 30–60 minutes, several times everything else
-combined. Without it the rest of the pipeline is 10–20 minutes, so
+A cold first run is roughly half an hour on four cores, dominated by the
+DirectX Shader Compiler — about 19 minutes of it, more than everything else
+combined. Without DXC the rest of the pipeline is 10–12 minutes, so
 `--skip=dxc` is worth remembering while iterating on another dependency.
 Subsequent runs are near-instant when nothing changed — see
 [Caching](#caching).
@@ -111,7 +111,7 @@ iterate on one dependency.
 `build_dxc.sh` accepts `DXC_KEEP_BUILD_TREE=1`, which keeps its cmake build
 tree instead of deleting it after staging. Set it whenever you expect to
 rebuild — otherwise every run starts from an empty build tree and pays the
-full 30–60 minutes.
+full DXC build.
 
 ## Caching
 
@@ -120,7 +120,7 @@ rerun does no work:
 
 | Dependency | Cache | Invalidated by |
 | --- | --- | --- |
-| FFmpeg | `build/ffmpeg-8.1.tar.xz` (download), `build/ffmpeg-8.1/` (source), `build/ffmpeg-8.1/_build/` (objects) | A changed `configure` flag set, tracked by a hash in `_build/.configure_flags`; otherwise an incremental `make` |
+| FFmpeg | `build/ffmpeg-8.1.tar.xz` (download), `build/ffmpeg-8.1/` (source), `build/ffmpeg-8.1/_build/` (objects), `build/ffmpeg.stamp` | A changed `FFMPEG_VERSION` **or** any change to `FFMPEG_CONFIGURE_FLAGS` (its SHA-256 is part of the stamp). Within a rebuild, `_build/.configure_flags` decides whether `configure` re-runs; otherwise it is an incremental `make` |
 | DXVK | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` **or** any change to the `Patches/dxvk/*.patch` series (its SHA-256 is part of the stamp) |
 | vkd3d-proton | `build/vkd3d-proton/` (clone), `build/vkd3d-proton.stamp` | A changed `VKD3D_PROTON_COMMIT` **or** any change to the `Patches/vkd3d-proton/*.patch` series |
 | SDL3 | `build/SDL/` (clone), `build/sdl3-prefix/`, `build/sdl3.stamp` | A changed `SDL3_VERSION`, or a bumped `CONFIG_REV` in `build_sdl3.sh` (its cmake options are part of the stamp) |
@@ -134,17 +134,68 @@ invokes `build_sdl3.sh` itself (it needs the headers), which is a no-op when
 the top-level `sdl3` step already ran. See
 [dependencies.md](dependencies.md#sdl3-3412).
 
+Every script prints its own stamp on demand and exits without touching the
+network or the build tree:
+
+```bash
+./Scripts/build_dxc.sh --print-stamp
+```
+
+That value is the whole cache identity of a dependency, and CI keys its
+artefact cache on it — see [Caching in CI](#caching-in-ci) below.
+
 To force specific work:
 
 ```bash
 rm build/dxvk.stamp                # rebuild DXVK only
 rm build/sdl3.stamp                # rebuild SDL3 only
 rm build/vkd3d-proton.stamp        # rebuild vkd3d-proton only
-rm build/dxc.stamp                 # rebuild DXC + the ABI shim (30-60 min)
+rm build/dxc.stamp                 # rebuild DXC + the ABI shim (~19 min)
+rm build/ffmpeg.stamp              # re-stage FFmpeg (incremental make)
 rm -rf build/ffmpeg-8.1            # re-extract and reconfigure FFmpeg
 rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball
 ./build.sh --clean                 # rebuild everything from scratch
 ```
+
+## Caching in CI
+
+The GitHub Actions workflow caches each dependency's **staged output** — the
+shipped `.so` files plus that dependency's `build/<dep>.stamp` — and restores
+them before `build.sh` runs. The restored stamp makes the script's own
+"outputs present and stamp matches" check fire, so the step exits without
+cloning or downloading anything. A fully warm run builds nothing and produces
+all three archives in about five seconds; the cold run it replaces is about
+half an hour.
+
+The cache key is the stamp itself:
+
+```
+<dep>-ubuntu-24.04-gcc<version>-glibc<version>-<sha256 of the stamp, 32 chars>
+```
+
+taken from `--print-stamp` so the key and the on-disk stamp cannot drift
+apart. Three consequences worth knowing:
+
+* **A too-loose key cannot ship a stale binary.** The script re-derives its
+  stamp on every run and compares; a mismatch rebuilds. The CI key is only a
+  performance hint.
+* **The toolchain is part of the key** because the staged libraries are linked
+  against the runner's gcc and glibc, and the `ubuntu-24.04` image is patched
+  in place — the image label alone would not notice a bump.
+* **Caches are scoped by branch.** A run reads its own branch, the default
+  branch, and (for a pull request) the base branch. A cache written by a PR
+  lives on that PR's merge ref and cannot be read by `main` or by any other
+  PR. So a dependency bump gets built twice — once on the PR, once on `main`
+  after the merge — while everything the PR did not touch restores from
+  `main`'s caches either way.
+
+Restore and save are separate workflow steps rather than the combined cache
+action, because the combined one only writes on a fully successful job: a
+failure in a late dependency, or in the release step, would otherwise discard
+everything the run had already built.
+
+Nothing about this changes a local build — the stamps behave exactly as they
+did before, and CI is simply seeding them.
 
 ## Output
 

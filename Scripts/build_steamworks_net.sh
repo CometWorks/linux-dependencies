@@ -26,6 +26,11 @@
 # Usage:
 #   ./build_steamworks_net.sh           Build (or no-op if cached).
 #   ./build_steamworks_net.sh --clean   Wipe build outputs and rebuild.
+#   ./build_steamworks_net.sh --print-stamp
+#                                       Print this build's cache stamp and exit
+#                                       without touching the network. The value
+#                                       is the content key CI caches the staged
+#                                       libraries under; see docs/building.md.
 #
 # Env-var overrides (defaults shown):
 #   STEAMWORKS_NET_REPO   = https://github.com/rlabrecque/Steamworks.NET.git
@@ -53,16 +58,24 @@ LIBRARIES_STEAM_DIR="${LIBRARIES_STEAM_DIR:-$BUILD_DIR/Libraries-Steam}"
 CLONE_DIR="$BUILD_DIR/Steamworks.NET"
 CSPROJ="$CLONE_DIR/Standalone3.0/Steamworks.NET.csproj"
 STAMP_FILE="$BUILD_DIR/steamworks-net.stamp"
+STAMP_CONTENT="$STEAMWORKS_NET_COMMIT"
 DLL_NAME="Steamworks.NET.dll"
 
 CLEAN=0
+PRINT_STAMP=0
 for arg in "$@"; do
     case "$arg" in
-        --clean)   CLEAN=1 ;;
-        -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --clean)       CLEAN=1 ;;
+        --print-stamp) PRINT_STAMP=1 ;;
+        -h|--help) sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
+
+if [ "$PRINT_STAMP" = "1" ]; then
+    printf '%s\n' "$STAMP_CONTENT"
+    exit 0
+fi
 
 # ---- preflight --------------------------------------------------------------
 
@@ -81,7 +94,7 @@ if [ "$CLEAN" = "1" ]; then
     rm -rf "$CLONE_DIR/Standalone3.0/bin" "$CLONE_DIR/Standalone3.0/obj"
 elif [ -f "$LIBRARIES_STEAM_DIR/$DLL_NAME" ] \
    && [ -f "$STAMP_FILE" ] \
-   && [ "$(cat "$STAMP_FILE")" = "$STEAMWORKS_NET_COMMIT" ]; then
+   && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
     echo "==> Cached build matches commit $STEAMWORKS_NET_COMMIT; skipping rebuild"
     echo "==> $DLL_NAME already in $LIBRARIES_STEAM_DIR"
     exit 0
@@ -140,7 +153,7 @@ fi
 echo "==> Staging $DLL_NAME into $LIBRARIES_STEAM_DIR"
 install -m 0644 "$DLL_SRC" "$LIBRARIES_STEAM_DIR/$DLL_NAME"
 
-printf '%s\n' "$STEAMWORKS_NET_COMMIT" > "$STAMP_FILE"
+printf '%s\n' "$STAMP_CONTENT" > "$STAMP_FILE"
 
 echo
 echo "==> Staged $DLL_NAME into $LIBRARIES_STEAM_DIR:"

@@ -31,6 +31,11 @@
 # Usage:
 #   ./build_vkd3d_proton.sh           Build (or no-op if cached).
 #   ./build_vkd3d_proton.sh --clean   Wipe build dirs and rebuild from scratch.
+#   ./build_vkd3d_proton.sh --print-stamp
+#                                     Print this build's cache stamp and exit
+#                                     without touching the network. The value
+#                                     is the content key CI caches the staged
+#                                     libraries under; see docs/building.md.
 #
 # Env-var overrides (defaults shown):
 #   VKD3D_PROTON_COMMIT = 3dfc6f07d0953b1e8b41705275c2c59cc7374fc5
@@ -67,10 +72,12 @@ STAMP_FILE="$BUILD_DIR/vkd3d-proton.stamp"
 EXPECTED_LIBS=(libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so)
 
 CLEAN=0
+PRINT_STAMP=0
 for arg in "$@"; do
     case "$arg" in
-        --clean)   CLEAN=1 ;;
-        -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --clean)       CLEAN=1 ;;
+        --print-stamp) PRINT_STAMP=1 ;;
+        -h|--help) sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
@@ -91,6 +98,11 @@ else
     PATCH_HASH="no-patches"
 fi
 STAMP_CONTENT="$VKD3D_PROTON_COMMIT patches=$PATCH_HASH"
+
+if [ "$PRINT_STAMP" = "1" ]; then
+    printf '%s\n' "$STAMP_CONTENT"
+    exit 0
+fi
 
 # ---- preflight --------------------------------------------------------------
 
