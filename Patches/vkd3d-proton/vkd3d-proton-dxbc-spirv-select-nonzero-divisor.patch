@@ -1,0 +1,27 @@
+diff --git a/subprojects/dxil-spirv/subprojects/dxbc-spirv/dxbc/dxbc_converter.cpp b/subprojects/dxil-spirv/subprojects/dxbc-spirv/dxbc/dxbc_converter.cpp
+index 8d7aa31..0981916 100644
+--- a/subprojects/dxil-spirv/subprojects/dxbc-spirv/dxbc/dxbc_converter.cpp
++++ b/subprojects/dxil-spirv/subprojects/dxbc-spirv/dxbc/dxbc_converter.cpp
+@@ -1489,15 +1489,20 @@ bool Converter::handleIntDivide(ir::Builder& builder, const Instruction& op) {
+ 
+     auto cond = builder.add(ir::Op::INe(ir::ScalarType::eBool, den, zero));
+ 
++    /* SPIR-V OpUDiv/OpUMod are undefined for a zero divisor even if the
++     * result is discarded by a later OpSelect, so divide by a selected
++     * nonzero divisor instead. */
++    auto safeDen = builder.add(ir::Op::Select(scalarType, cond, den, neg1));
++
+     if (dstDiv.getWriteMask() & c) {
+       auto& scalar = divScalars.emplace_back();
+-      scalar = builder.add(ir::Op::UDiv(scalarType, num, den));
++      scalar = builder.add(ir::Op::UDiv(scalarType, num, safeDen));
+       scalar = builder.add(ir::Op::Select(scalarType, cond, scalar, neg1));
+     }
+ 
+     if (dstMod.getWriteMask() & c) {
+       auto& scalar = modScalars.emplace_back();
+-      scalar = builder.add(ir::Op::UMod(scalarType, num, den));
++      scalar = builder.add(ir::Op::UMod(scalarType, num, safeDen));
+       scalar = builder.add(ir::Op::Select(scalarType, cond, scalar, neg1));
+     }
+   }
