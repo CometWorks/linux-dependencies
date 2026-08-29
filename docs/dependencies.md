@@ -229,7 +229,11 @@ D3D12 layer, so vkd3d-proton stays out of the SE1 archive — the SE1 library
 set is unchanged from before the SE2 split.
 
 **How it is built:** a plain native meson build (`--buildtype release`),
-installed into `build/vkd3d-proton-out/` and staged from there. vkd3d-proton
+installed into `build/vkd3d-proton-out/` and staged from there. That install
+destdir is not purely an intermediate: its `include/vkd3d-proton/` headers are
+what [the FidelityFX build](#amd-fidelityfx-fsr-315-se2-archive-only) compiles
+its DX12 backend against, so they count as an output of this step — their
+presence is part of the cache check, and CI caches them next to the libraries. vkd3d-proton
 generates its COM headers with `widl` (the Wine IDL compiler); the build
 script accepts `widl`, `widl-stable`, or Ubuntu's
 `x86_64-w64-mingw32-widl` from the `mingw-w64-tools` package, shimming the

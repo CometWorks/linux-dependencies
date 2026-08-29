@@ -29,7 +29,9 @@ name: Build
 # so the peak disk footprint stays within the runner's 14 GB.
 #
 # Every dependency's staged output is cached, so a run only pays for what
-# actually changed. The cache key IS the build script's own cache stamp: each
+# actually changed. "Staged output" means everything a later step consumes,
+# not only the shipped files: vkd3d-proton's installed headers are cached too,
+# because the FidelityFX build compiles against them. The cache key IS the build script's own cache stamp: each
 # Scripts/build_*.sh prints it with --print-stamp, and it already covers the
 # pin, the patch series and any first-party source that goes into the result.
 # Restoring the stamp file next to the staged libraries makes the script's
@@ -103,8 +105,13 @@ jobs:
         build/dxvk.stamp
         build/Libraries/libdxvk_d3d11.so
         build/Libraries/libdxvk_dxgi.so
+      # The installed headers are cached alongside the libraries: the
+      # FidelityFX step compiles its DX12 backend against them, so a cache
+      # that restored only the .so files would skip the vkd3d-proton build and
+      # leave that step with nothing to compile against.
       CACHE_PATHS_VKD3D_PROTON: |
         build/vkd3d-proton.stamp
+        build/vkd3d-proton-out/include
         build/Libraries-SE2/libvkd3d-proton-d3d12.so
         build/Libraries-SE2/libvkd3d-proton-d3d12core.so
       CACHE_PATHS_DXC: |

@@ -26,7 +26,15 @@
 #   ├── Libraries-SE2/             SE2 staging dir this script populates
 #   ├── vkd3d-proton/              clone at the pinned commit
 #   ├── vkd3d-proton-out/          meson install destdir (recreated)
+#   │   └── include/vkd3d-proton/  installed D3D12 headers -- an output, see below
 #   └── vkd3d-proton.stamp         last-built commit + patch-series hash
+#
+# The install destdir is not just an intermediate: Scripts/build_fidelityfx.sh
+# compiles the FidelityFX DX12 backend against the headers installed there, so
+# that the ID3D12Device and ID3D12Resource vtables it is built against are by
+# construction the ones this library hands out. They are therefore treated as
+# an output of this build -- present-and-correct is part of the cache check
+# below, and CI caches them next to the .so files.
 #
 # Usage:
 #   ./build_vkd3d_proton.sh           Build (or no-op if cached).
@@ -71,6 +79,11 @@ STAMP_FILE="$BUILD_DIR/vkd3d-proton.stamp"
 
 EXPECTED_LIBS=(libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so)
 
+# The installed headers Scripts/build_fidelityfx.sh compiles against. One
+# marker file stands in for the set in the cache check.
+INCLUDE_DIR="$OUT_DIR/include/vkd3d-proton"
+EXPECTED_HEADER="vkd3d_d3d12.h"
+
 CLEAN=0
 PRINT_STAMP=0
 for arg in "$@"; do
@@ -97,7 +110,14 @@ if [ "${#PATCH_FILES[@]}" -gt 0 ]; then
 else
     PATCH_HASH="no-patches"
 fi
-STAMP_CONTENT="$VKD3D_PROTON_COMMIT patches=$PATCH_HASH"
+# Bumped whenever the set of staged outputs changes, so a build/ tree (or a CI
+# cache entry) from before the change is rebuilt rather than re-used: the
+# commit and patch hash alone would still match, and the missing artefact would
+# only surface later, in whatever consumes it.
+#   1: the two .so files
+#   2: + the installed D3D12 headers (consumed by build_fidelityfx.sh)
+ARTEFACT_REV="2"
+STAMP_CONTENT="$VKD3D_PROTON_COMMIT patches=$PATCH_HASH artefacts$ARTEFACT_REV"
 
 if [ "$PRINT_STAMP" = "1" ]; then
     printf '%s\n' "$STAMP_CONTENT"
@@ -133,17 +153,19 @@ mkdir -p "$BUILD_DIR" "$LIBRARIES_SE2_DIR"
 
 # ---- cache check ------------------------------------------------------------
 
-ALL_LIBS_PRESENT=1
+ALL_OUTPUTS_PRESENT=1
 for lib in "${EXPECTED_LIBS[@]}"; do
-    [ -e "$LIBRARIES_SE2_DIR/$lib" ] || ALL_LIBS_PRESENT=0
+    [ -e "$LIBRARIES_SE2_DIR/$lib" ] || ALL_OUTPUTS_PRESENT=0
 done
+[ -f "$INCLUDE_DIR/$EXPECTED_HEADER" ] || ALL_OUTPUTS_PRESENT=0
 
 if [ "$CLEAN" = "1" ]; then
     rm -rf "$SRC_DIR" "$OUT_DIR"
-elif [ "$ALL_LIBS_PRESENT" = "1" ] \
+elif [ "$ALL_OUTPUTS_PRESENT" = "1" ] \
    && [ -f "$STAMP_FILE" ] \
    && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
     echo "==> Cached build matches vkd3d-proton ${VKD3D_PROTON_COMMIT:0:12}; skipping rebuild"
+    echo "==> vkd3d-proton headers already in $INCLUDE_DIR"
     echo "==> vkd3d-proton libs already in $LIBRARIES_SE2_DIR:"
     ( cd "$LIBRARIES_SE2_DIR" && ls -1 libvkd3d-proton-*.so* )
     exit 0
@@ -208,6 +230,19 @@ echo "==> Building vkd3d-proton (native, release)"
     ninja -C build-native -j "$JOBS"
     meson install -C build-native --quiet
 )
+
+# ---- verify the installed headers -------------------------------------------
+# meson install puts vkd3d-proton's public headers under the prefix. Assert
+# them here rather than letting build_fidelityfx.sh fail later with no context
+# if upstream ever stops installing them.
+
+if [ ! -f "$INCLUDE_DIR/$EXPECTED_HEADER" ]; then
+    echo "ERROR: the build did not install $EXPECTED_HEADER under $INCLUDE_DIR" >&2
+    echo "       Scripts/build_fidelityfx.sh compiles the FidelityFX DX12" >&2
+    echo "       backend against these headers." >&2
+    exit 1
+fi
+echo "==> Installed vkd3d-proton headers: $(find "$INCLUDE_DIR" -name '*.h' | wc -l) files in $INCLUDE_DIR"
 
 # ---- locate + stage the .so outputs -----------------------------------------
 

@@ -129,7 +129,7 @@ rerun does no work:
 | --- | --- | --- |
 | FFmpeg | `build/ffmpeg-8.1.tar.xz` (download), `build/ffmpeg-8.1/` (source), `build/ffmpeg-8.1/_build/` (objects), `build/ffmpeg.stamp` | A changed `FFMPEG_VERSION` **or** any change to `FFMPEG_CONFIGURE_FLAGS` (its SHA-256 is part of the stamp). Within a rebuild, `_build/.configure_flags` decides whether `configure` re-runs; otherwise it is an incremental `make` |
 | DXVK | `build/dxvk/` (clone), `build/dxvk.stamp` | A changed `DXVK_VERSION` **or** any change to the `Patches/dxvk/*.patch` series (its SHA-256 is part of the stamp) |
-| vkd3d-proton | `build/vkd3d-proton/` (clone), `build/vkd3d-proton.stamp` | A changed `VKD3D_PROTON_COMMIT` **or** any change to the `Patches/vkd3d-proton/*.patch` series |
+| vkd3d-proton | `build/vkd3d-proton/` (clone), `build/vkd3d-proton-out/` (install destdir, whose headers the FidelityFX build compiles against), `build/vkd3d-proton.stamp` | A changed `VKD3D_PROTON_COMMIT`, any change to the `Patches/vkd3d-proton/*.patch` series, **or** a bumped `ARTEFACT_REV` in `build_vkd3d_proton.sh` (which set of outputs the build produces is part of the stamp) |
 | SDL3 | `build/SDL/` (clone), `build/sdl3-prefix/`, `build/sdl3.stamp` | A changed `SDL3_VERSION`, or a bumped `CONFIG_REV` in `build_sdl3.sh` (its cmake options are part of the stamp) |
 | OpenAL | `build/openal-soft-1.25.2.tar.bz2`, `build/openal-soft-1.25.2/`, `build/openal.stamp` | A changed `OPENAL_VERSION` |
 | Steamworks.NET | `build/Steamworks.NET/` (clone), `build/steamworks-net.stamp` | A changed `STEAMWORKS_NET_COMMIT` |
@@ -171,8 +171,9 @@ rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball
 ## Caching in CI
 
 The GitHub Actions workflow caches each dependency's **staged output** — the
-shipped `.so` files plus that dependency's `build/<dep>.stamp` — and restores
-them before `build.sh` runs. The restored stamp makes the script's own
+shipped `.so` files, anything a later step consumes (vkd3d-proton's installed
+headers, which the FidelityFX build compiles against), plus that dependency's
+`build/<dep>.stamp` — and restores them before `build.sh` runs. The restored stamp makes the script's own
 "outputs present and stamp matches" check fire, so the step exits without
 cloning or downloading anything. A fully warm run builds nothing and produces
 all three archives in about five seconds; the cold run it replaces is about
