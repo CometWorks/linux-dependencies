@@ -29,6 +29,12 @@ Files in this directory:
                                   linked into libdxcompiler.so
     DXC-README.txt                Build provenance for the patched
                                   libdxcompiler.so; why libdxil.so is absent
+    FidelityFX-LICENSE.txt        MIT licence covering
+                                  libamd_fidelityfx_loader_dx12.so, built from
+                                  the MIT-licensed portion of the AMD FSR SDK
+                                  (patch series under Patches/fidelityfx/)
+    FidelityFX-README.txt         Build provenance for the FSR 3.1.5 upscaler
+                                  library and its shader compilation
     FMOD-EULA.txt                 FMOD End User License Agreement covering
                                   libfmod.so and libfmodstudio.so
                                   (proprietary, Firelight Technologies)

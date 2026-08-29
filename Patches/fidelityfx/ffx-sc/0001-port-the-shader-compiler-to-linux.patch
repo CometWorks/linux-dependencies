@@ -1,0 +1,1210 @@
+diff --git a/sdk/tools/ffx_shader_compiler/src/ffx_sc.cpp b/sdk/tools/ffx_shader_compiler/src/ffx_sc.cpp
+index c3ec37f..4f37c18 100644
+--- a/sdk/tools/ffx_shader_compiler/src/ffx_sc.cpp
++++ b/sdk/tools/ffx_shader_compiler/src/ffx_sc.cpp
+@@ -21,11 +21,8 @@
+ // THE SOFTWARE.
+ 
+ #include "hlsl_compiler.h"
+-#include "glsl_compiler.h"
+ #include "utils.h"
+ 
+-#include <Windows.h>
+-#include <pathcch.h>
+ #include <vector>
+ #include <string_view>
+ #include <filesystem>
+@@ -33,9 +30,6 @@
+ #include <locale>
+ #include <stdexcept>
+ 
+-
+-#pragma comment(lib, "pathcch.lib")
+-
+ static const wchar_t* const APP_NAME    = L"FidelityFX-SC";
+ static const wchar_t* const EXE_NAME    = L"FidelityFX_SC";
+ static const wchar_t* const APP_VERSION = L"1.0.0";
+@@ -159,6 +153,7 @@ private:
+     void WriteShaderBinaryHeader(Permutation& permutation);
+     void PrintPermutationArguments(Permutation& permutation);
+     void WriteShaderPermutationsHeader();
++    std::string EntryPointName() const;
+     void DumpDepfileGCC();
+     void DumpDepfileMSVC();
+ };
+@@ -258,7 +253,7 @@ void LaunchParameters::ParseCommandLine(int argCount, const wchar_t* const* args
+             }
+         }
+         else if (StartsWith(args[i], L"-debugcmdline"))
+-            wprintf(debugOutput.c_str());
++            wprintf(L"%ls", debugOutput.c_str());
+         else if (StartsWith(args[i], L"-num-threads"))
+             ParseNumThreads(numThreads, args[i]);
+         else if (StartsWith(args[i], L"-output"))
+@@ -309,39 +304,20 @@ void LaunchParameters::ParseCommandLine(int argCount, const wchar_t* const* args
+ 
+ void LaunchParameters::EnsureOutputPathExistsAndMakeCanonical(std::wstring& inoutOutputPath)
+ {
+-    std::replace(inoutOutputPath.begin(), inoutOutputPath.end(), L'/', L'\\');
+-
+-    PWSTR canonicalOutputPath = NULL;
++    // Linux port: the PathCch* family and the MAX_PATH dance it exists for are
++    // Win32-only. std::filesystem does the same job -- make the path absolute
++    // and create every missing component of it.
++    if (inoutOutputPath.empty())
++        return;
+ 
+-    // Make the path canonical, convert to long path if needed and add the trailing slash
+-    HRESULT hr = PathAllocCanonicalize(inoutOutputPath.c_str(), PATHCCH_ALLOW_LONG_PATHS | PATHCCH_ENSURE_TRAILING_SLASH, &canonicalOutputPath);
+-    if (hr == S_OK)
+-    {
+-        PWSTR componentStart = NULL;
++    const fs::path outputPath = fs::absolute(fs::path(WCharToUTF8(inoutOutputPath))).lexically_normal();
+ 
+-        // Find the first character after "root" indicator -- which means a folder (path component) or file
+-        hr = PathCchSkipRoot(canonicalOutputPath, &componentStart);
+-        if (hr == S_OK)
+-        {
+-            // Try search for the next delimiter
+-            wchar_t* componentEnd = wcsstr(componentStart, L"\\");
++    std::error_code error;
++    fs::create_directories(outputPath, error);
++    if (error)
++        throw std::runtime_error("Failed to create the output directory " + outputPath.string() + ": " + error.message());
+ 
+-            // If the delimiter is found, make sure the folder is created
+-            while (componentEnd != NULL)
+-            {
+-                // Temporally replace delimiter '\\' with null-terminator, create directory, and restore the delimiter
+-                *componentEnd = L'\0';
+-                CreateDirectoryW(canonicalOutputPath, NULL);
+-                *componentEnd = L'\\';
+-
+-                // advance to the next component (file or folder) and try to find the next delimiter (meaning -- it's folder), and repeat the loop.
+-                componentStart = componentEnd + 1;
+-                componentEnd = wcsstr(componentStart, L"\\");
+-            }
+-        }
+-        inoutOutputPath = canonicalOutputPath;
+-        LocalFree(canonicalOutputPath);
+-    }
++    inoutOutputPath = UTF8ToWChar(outputPath.string());
+ }
+ 
+ void LaunchParameters::ParsePermutationOption(PermutationOption& outPermutationOption, const std::wstring arg)
+@@ -431,23 +407,14 @@ void Application::Process()
+            predictedDuplicates);
+     if (totalPermutations - m_LastPermutationIndex < predictedDuplicates)
+     {
+-        printf("\nERROR: Predicted %llu duplicates\n\n\n", predictedDuplicates);
++        printf("\nERROR: Predicted %zu duplicates\n\n\n", predictedDuplicates);
+     }
+ }
+ 
+ std::wstring Application::MakeFullPath(const std::wstring & outputPath, const std::wstring & fileName)
+ {
+-    // Append file name, optionally converting to long path again, because the outputPath alone could be normal path, but when filename is added -- it could become a long path
+-    PWSTR canonicalFileNameRaw = NULL;
+-    HRESULT hr = PathAllocCombine(outputPath.c_str(), fileName.c_str(), PATHCCH_ALLOW_LONG_PATHS, &canonicalFileNameRaw);
+-
+-    if (S_OK == hr)
+-    {
+-        std::wstring canonicalFileName(canonicalFileNameRaw);
+-        LocalFree(canonicalFileNameRaw);
+-        return canonicalFileName;
+-    }
+-    return fileName;
++    // Linux port: PathAllocCombine only exists to work around MAX_PATH.
++    return UTF8ToWChar((fs::path(WCharToUTF8(outputPath)) / WCharToUTF8(fileName)).string());
+ }
+ 
+ void Application::GenerateMacroPermutations(std::deque<Permutation>& permutations)
+@@ -544,8 +511,6 @@ void Application::OpenSourceFile()
+         m_ShaderName = m_Params.shaderName;
+ 
+     std::string dxcDll         = WCharToUTF8(m_Params.dxcDll);
+-    std::string d3dDll         = WCharToUTF8(m_Params.d3dDll);
+-    std::string glslangExe     = WCharToUTF8(m_Params.glslangExe);
+     std::string shaderPath     = WCharToUTF8(m_Params.inputFile);
+     std::string shaderName     = WCharToUTF8(m_ShaderName);
+     std::string shaderFileName = WCharToUTF8(m_ShaderFileName);
+@@ -560,29 +525,16 @@ void Application::OpenSourceFile()
+         if (extension == L"hlsl")
+             m_Compiler = std::unique_ptr<HLSLCompiler>(
+                 new HLSLCompiler(HLSLCompiler::DXC, dxcDll, shaderPath, shaderName, shaderFileName, outputPath, m_Params.disableLogs, m_Params.debugCompile));
+-        else if (extension == L"glsl")
+-            m_Compiler = std::unique_ptr<GLSLCompiler>(new GLSLCompiler(glslangExe, shaderPath, shaderName, shaderFileName, outputPath, m_Params.disableLogs, m_Params.debugCompile));
+         else
+-            throw std::runtime_error("Unknown shader source file extension. Please use the -compiler option to specify which compiler to use.");
++            throw std::runtime_error("Unknown shader source file extension. This build only supports HLSL through DXC.");
+     }
+     else
+     {
+         if (m_Params.compiler == L"dxc")
+             m_Compiler = std::unique_ptr<HLSLCompiler>(
+                 new HLSLCompiler(HLSLCompiler::DXC, dxcDll, shaderPath, shaderName, shaderFileName, outputPath, m_Params.disableLogs, m_Params.debugCompile));
+-        else if (m_Params.compiler == L"gdk.scarlett.x64")
+-            m_Compiler = std::unique_ptr<HLSLCompiler>(new HLSLCompiler(
+-                HLSLCompiler::GDK_SCARLETT_X64, dxcDll, shaderPath, shaderName, shaderFileName, outputPath, m_Params.disableLogs, m_Params.debugCompile));
+-        else if (m_Params.compiler == L"gdk.xboxone.x64")
+-            m_Compiler = std::unique_ptr<HLSLCompiler>(new HLSLCompiler(
+-                HLSLCompiler::GDK_XBOXONE_X64, dxcDll, shaderPath, shaderName, shaderFileName, outputPath, m_Params.disableLogs, m_Params.debugCompile));
+-        else if (m_Params.compiler == L"fxc")
+-            m_Compiler = std::unique_ptr<HLSLCompiler>(
+-                new HLSLCompiler(HLSLCompiler::FXC, d3dDll, shaderPath, shaderName, shaderFileName, outputPath, m_Params.disableLogs, m_Params.debugCompile));
+-        else if (m_Params.compiler == L"glslang")
+-            m_Compiler = std::unique_ptr<GLSLCompiler>(new GLSLCompiler(glslangExe, shaderPath, shaderName, shaderFileName, outputPath, m_Params.disableLogs, m_Params.debugCompile));
+         else
+-            throw std::runtime_error("Unknown compiler requested (valid options: dxc, fxc or glslang)");
++            throw std::runtime_error("Unknown compiler requested (this build only supports dxc)");
+     }
+ 
+     std::vector<fs::path> includeSearchPaths{};
+@@ -782,7 +734,9 @@ void Application::WriteShaderBinaryHeader(Permutation& permutation)
+ 
+     std::wstring outputPath = MakeFullPath(m_Params.ouputPath, headerFileName);
+ 
+-    _wfopen_s(&fp, outputPath.c_str(), L"wb");
++    fp = fopen(WCharToUTF8(outputPath).c_str(), "wb");
++    if (fp == NULL)
++        throw std::runtime_error("Failed to open " + WCharToUTF8(outputPath) + " for writing.");
+ 
+     // ------------------------------------------------------------------------------------------------
+     // Write autogen comment
+@@ -908,6 +862,18 @@ void Application::PrintPermutationArguments(Permutation& permutation)
+     m_WriteMutex.unlock();
+ }
+ 
++/// The shader entry point, as passed with -E. FidelityFX SDK 2.x expects the
++/// permutation header to carry it as `entryName`; the 1.1.4 compiler this tool
++/// is ported from predates that field.
++std::string Application::EntryPointName() const
++{
++    for (size_t i = 0; i + 1 < m_Params.compilerArgs.size(); i++)
++        if (m_Params.compilerArgs[i] == L"-E")
++            return WCharToUTF8(m_Params.compilerArgs[i + 1]);
++
++    return "main";
++}
++
+ void Application::WriteShaderPermutationsHeader()
+ {
+     if (m_UniquePermutations.empty())
+@@ -919,7 +885,9 @@ void Application::WriteShaderPermutationsHeader()
+ 
+     std::wstring outputPath = MakeFullPath(m_Params.ouputPath, m_ShaderName + L"_permutations.h");
+ 
+-    _wfopen_s(&fp, outputPath.c_str(), L"wb");
++    fp = fopen(WCharToUTF8(outputPath).c_str(), "wb");
++    if (fp == NULL)
++        throw std::runtime_error("Failed to open " + WCharToUTF8(outputPath) + " for writing.");
+ 
+     // ------------------------------------------------------------------------------------------------
+     // Write header includes
+@@ -991,7 +959,8 @@ void Application::WriteShaderPermutationsHeader()
+     // ------------------------------------------------------------------------------------------------
+     fprintf(fp, "typedef struct %s_PermutationInfo {\n", shaderName.c_str());
+     fprintf(fp, "    const uint32_t       blobSize;\n");
+-    fprintf(fp, "    const unsigned char* blobData;\n\n");
++    fprintf(fp, "    const unsigned char* blobData;\n");
++    fprintf(fp, "    const char*          entryName;\n\n");
+ 
+     if (m_Params.generateReflection)
+         m_Compiler->WritePermutationHeaderReflectionStructMembers(fp);
+@@ -1028,7 +997,11 @@ void Application::WriteShaderPermutationsHeader()
+ 
+             std::string permutationName = shaderName + "_" + permutation.hashDigest;
+ 
+-            fprintf(fp, "    { g_%s_size, g_%s_data, ", permutationName.c_str(), permutationName.c_str());
++            fprintf(fp,
++                    "    { g_%s_size, g_%s_data, \"%s\", ",
++                    permutationName.c_str(),
++                    permutationName.c_str(),
++                    EntryPointName().c_str());
+ 
+             if (m_Params.generateReflection)
+                 m_Compiler->WritePermutationHeaderReflectionData(fp, permutation);
+@@ -1061,7 +1034,9 @@ void Application::DumpDepfileGCC()
+     std::wstring outputFilename = MakeFullPath(m_Params.ouputPath, m_ShaderName + L"_permutations.h");
+     std::wstring depfilePath = outputFilename + L".d";
+ 
+-    _wfopen_s(&fp, depfilePath.c_str(), L"wb");
++    fp = fopen(WCharToUTF8(depfilePath).c_str(), "wb");
++    if (fp == NULL)
++        throw std::runtime_error("Failed to open " + WCharToUTF8(depfilePath) + " for writing.");
+ 
+     fs::path output = WCharToUTF8(outputFilename);
+ 
+@@ -1084,7 +1059,7 @@ void Application::DumpDepfileMSVC()
+     printf("MSVC depfile not implemented yet.\n");
+ }
+ 
+-int wmain(int argc, wchar_t** argv)
++int main(int argc, char** argv)
+ {
+     try
+     {
+@@ -1094,8 +1069,19 @@ int wmain(int argc, wchar_t** argv)
+             return 1;
+         }
+ 
++        // Linux port: there is no wmain, so widen the UTF-8 argv the parser wants.
++        std::vector<std::wstring> wideArgs;
++        wideArgs.reserve(argc);
++        for (int i = 0; i < argc; i++)
++            wideArgs.push_back(UTF8ToWChar(argv[i]));
++
++        std::vector<const wchar_t*> wideArgPointers;
++        wideArgPointers.reserve(argc);
++        for (const std::wstring& arg : wideArgs)
++            wideArgPointers.push_back(arg.c_str());
++
+         LaunchParameters params;
+-        params.ParseCommandLine(argc - 1, argv + 1);
++        params.ParseCommandLine(argc - 1, wideArgPointers.data() + 1);
+ 
+         Application app(params);
+         app.Process();
+diff --git a/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.cpp b/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.cpp
+index 6b2a014..0fc8f77 100644
+--- a/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.cpp
++++ b/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.cpp
+@@ -23,28 +23,30 @@
+ #include "hlsl_compiler.h"
+ #include "utils.h"
+ 
+-// D3D12SDKVersion needs to line up with the version number on Microsoft's DirectX12 Agility SDK Download page
+-extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 614; }
+-extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = u8".\\D3D12\\"; }
++#include <dlfcn.h>
++
++// Linux port: the Agility SDK exports (D3D12SDKVersion / D3D12SDKPath) only
++// mean something to a Windows D3D12 runtime and are dropped along with the
++// FXC and GDK backends.
+ 
+ struct DxcCustomIncludeHandler : public IDxcIncludeHandler
+ {
+-    HRESULT DxcCustomIncludeHandler::QueryInterface(REFIID iid, void** ppvObject) override
++    HRESULT QueryInterface(REFIID iid, void** ppvObject) override
+     {
+         return S_OK;
+     }
+ 
+-    ULONG DxcCustomIncludeHandler::AddRef() override
++    ULONG AddRef() override
+     {
+         return 1;
+     }
+ 
+-    ULONG DxcCustomIncludeHandler::Release() override
++    ULONG Release() override
+     {
+         return 1;
+     }
+ 
+-    HRESULT DxcCustomIncludeHandler::LoadSource(_In_z_ LPCWSTR pFilename, _COM_Outptr_result_maybenull_ IDxcBlob** ppIncludeSource) override
++    HRESULT LoadSource(_In_z_ LPCWSTR pFilename, _COM_Outptr_result_maybenull_ IDxcBlob** ppIncludeSource) override
+     {
+         fs::path filename = WCharToUTF8(std::wstring(pFilename));
+         fs::path dependentFilename;
+@@ -98,68 +100,6 @@ struct DxcCustomIncludeHandler : public IDxcIncludeHandler
+     CComPtr<IDxcIncludeHandler> dxcDefaultIncludeHandler;
+ };
+ 
+-struct FxcCustomIncludeHandler : public ID3DInclude
+-{
+-    COM_DECLSPEC_NOTHROW HRESULT Open(D3D_INCLUDE_TYPE IncludeType, LPCSTR pFilename, LPCVOID pParentData, LPCVOID* ppData, UINT* pBytes)
+-    {
+-        fs::path filename;
+-        fs::path dependentFilename;
+-
+-        FILE* fp = NULL;
+-
+-        // try opening the file in local folder
+-        fs::path localFolder = sourcePath;
+-        localFolder.remove_filename();
+-        filename          = fs::absolute(localFolder / pFilename);
+-        _wfopen_s(&fp, UTF8ToWChar(filename.string()).c_str(), L"rb");
+-
+-        // try search file in include paths
+-        if (!fp)
+-        {
+-            for (auto& searchPath : includeSearchPaths)
+-            {
+-                filename = fs::absolute(searchPath / pFilename);
+-                _wfopen_s(&fp, UTF8ToWChar(filename.string()).c_str(), L"rb");
+-                if (fp)
+-                {
+-                    dependentFilename = filename;  // update dependent filename to the searched location
+-                    break;
+-                }
+-            }
+-        }
+-
+-        if (!dependentFilename.empty())
+-            dependencies.insert(dependentFilename.generic_string());
+-
+-        if (fp)
+-        {
+-            fseek(fp, 0, SEEK_END);
+-            *pBytes = ftell(fp);
+-            fseek(fp, 0, SEEK_SET);
+-
+-            buffer.resize(*pBytes);
+-            fread(buffer.data(), *pBytes, 1, fp);
+-            fclose(fp);
+-
+-            *ppData = buffer.data();
+-
+-            return S_OK;
+-        }
+-
+-        return E_FAIL;
+-    }
+-
+-    COM_DECLSPEC_NOTHROW HRESULT __stdcall Close(LPCVOID pData)
+-    {
+-        return S_OK;
+-    }
+-
+-    fs::path sourcePath;
+-    std::vector<fs::path> includeSearchPaths;
+-    std::unordered_set<std::string> dependencies;
+-    std::vector<char*> buffer;
+-};
+-
+ uint8_t* HLSLDxcShaderBinary::BufferPointer()
+ {
+     return (uint8_t*)pShader->GetBufferPointer();
+@@ -170,16 +110,6 @@ size_t HLSLDxcShaderBinary::BufferSize()
+     return pShader->GetBufferSize();
+ }
+ 
+-uint8_t* HLSLFxcShaderBinary::BufferPointer()
+-{
+-    return (uint8_t*)pShader->GetBufferPointer();
+-}
+-
+-size_t HLSLFxcShaderBinary::BufferSize()
+-{
+-    return pShader->GetBufferSize();
+-}
+-
+ HLSLCompiler::HLSLCompiler(HLSLCompiler::Backend backend,
+                            const std::string&    dll,
+                            const std::string&    shaderPath,
+@@ -195,136 +125,36 @@ HLSLCompiler::HLSLCompiler(HLSLCompiler::Backend backend,
+     std::ifstream stream(m_ShaderPath);
+     m_Source = std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+ 
+-    switch (m_backend)
+-    {
+-    case HLSLCompiler::DXC:
+-    {
+-        if (!dll.empty())
+-        {
+-            printf("Attempting to load binary:\n");
+-            printf("%s\n", dll.c_str());
+-        }
+-        m_DllHandle = LoadLibrary(dll.empty() ? "dxcompiler.dll" : dll.c_str());
++    // Linux port: dlopen the DXC shared library instead of LoadLibrary-ing
++    // dxcompiler.dll. The default name matches the stock upstream DXC build
++    // this tool is linked against.
++    const std::string library = dll.empty() ? "libdxcompiler.so" : dll;
+ 
+-        if (m_DllHandle != nullptr)
+-        {
+-            m_DxcCreateInstanceFunc = (DxcCreateInstanceProc)GetProcAddress(m_DllHandle, "DxcCreateInstance");
+-
+-            if (!m_DxcCreateInstanceFunc)
+-                throw std::runtime_error("Failed to load DXC library!");
+-        }
+-        else
+-        {
+-            auto err = GetLastError();
+-            std::string errorMsg("Failed to load DXC library! Failed with error ");
+-            errorMsg += std::to_string(err);
+-            throw std::runtime_error(errorMsg);
+-        } 
+-
+-        // Create compiler and utils.
+-        HRESULT hr = m_DxcCreateInstanceFunc(CLSID_DxcUtils, IID_PPV_ARGS(&m_DxcUtils));
+-        assert(SUCCEEDED(hr));
+-        hr = m_DxcCreateInstanceFunc(CLSID_DxcCompiler, IID_PPV_ARGS(&m_DxcCompiler));
+-        assert(SUCCEEDED(hr));
+-
+-        // Create default include handler.
+-        hr = m_DxcUtils->CreateDefaultIncludeHandler(&m_DxcDefaultIncludeHandler);
+-        assert(SUCCEEDED(hr));
+-
+-        break;
+-    }
+-    case HLSLCompiler::GDK_SCARLETT_X64:
+-    case HLSLCompiler::GDK_XBOXONE_X64:
++    if (!dll.empty())
+     {
+-        // Setup the path to the compiler dll
+-        std::wstring dllPath;
+-
+-        // Xbox One
+-        if (m_backend == HLSLCompiler::GDK_XBOXONE_X64)
+-        {
+-            const wchar_t* gdkPath = _wgetenv(L"GXDKLatest");
+-            if (!gdkPath)
+-            {
+-                throw std::runtime_error("GDK Xbox One compile requested, but could not find \"GXDKLatest\" environment variable. Please ensure the GDK is installed");
+-            }
+-
+-            dllPath = gdkPath;
+-            dllPath += L"bin\\XboxOne\\dxcompiler_x.dll";
+-
+-            // Compiler internally looks for local paths
+-            std::wstring dllPathSearch = gdkPath;
+-            dllPathSearch += L"bin\\XboxOne\\";
+-            SetDllDirectoryW(dllPathSearch.c_str());
+-        }
+-        
+-        // Scarlett
+-        else
+-        {
+-            const wchar_t* gdkPath = _wgetenv(L"GXDKLatest");
+-            if (!gdkPath)
+-            {
+-                throw std::runtime_error("GDK Scarlett compile requested, but could not find \"GXDKLatest\" environment variable. Please ensure the GDK is installed");
+-            }
+-
+-            dllPath = gdkPath;
+-            dllPath += L"bin\\Scarlett\\dxcompiler_xs.dll";
+-
+-            // Compiler internally looks for local paths
+-            std::wstring dllPathSearch = gdkPath;
+-            dllPathSearch += L"bin\\Scarlett\\";
+-            SetDllDirectoryW(dllPathSearch.c_str());
+-        }
+-
+-        m_DllHandle = LoadLibraryW(dllPath.c_str());
+-
+-        if (m_DllHandle != nullptr)
+-        {
+-            m_DxcCreateInstanceFunc = (DxcCreateInstanceProc)GetProcAddress(m_DllHandle, "DxcCreateInstance");
+-
+-            if (!m_DxcCreateInstanceFunc)
+-                throw std::runtime_error("Failed to load GDC dxcompiler.dll!");
+-        }
+-        else
+-        {
+-            auto        err = GetLastError();
+-            std::string errorMsg("Failed to load GDC dxcompiler.dll! Failed with error ");
+-            errorMsg += std::to_string(err);
+-            throw std::runtime_error(errorMsg);
+-        }
++        printf("Attempting to load binary:\n");
++        printf("%s\n", library.c_str());
++    }
+ 
+-        // Create compiler and utils.
+-        HRESULT hr = m_DxcCreateInstanceFunc(CLSID_DxcUtils, IID_PPV_ARGS(&m_DxcUtils));
+-        assert(SUCCEEDED(hr));
+-        hr = m_DxcCreateInstanceFunc(CLSID_DxcCompiler, IID_PPV_ARGS(&m_DxcCompiler));
+-        assert(SUCCEEDED(hr));
++    m_DllHandle = dlopen(library.c_str(), RTLD_NOW | RTLD_LOCAL);
+ 
+-        // Create default include handler.
+-        hr = m_DxcUtils->CreateDefaultIncludeHandler(&m_DxcDefaultIncludeHandler);
+-        assert(SUCCEEDED(hr));
++    if (m_DllHandle == nullptr)
++        throw std::runtime_error(std::string("Failed to load the DXC library! ") + dlerror());
+ 
+-        break;
+-    }
+-    case HLSLCompiler::FXC:
+-    {
+-        m_DllHandle = LoadLibrary(dll.empty() ? "D3DCompiler_47.dll" : dll.c_str());
++    m_DxcCreateInstanceFunc = (DxcCreateInstanceProc)dlsym(m_DllHandle, "DxcCreateInstance");
+ 
+-        if (m_DllHandle != nullptr)
+-        {
+-            m_FxcD3DCompile = (pD3DCompile)GetProcAddress(m_DllHandle, "D3DCompile");
+-            m_FxcD3DGetBlobPart = (pD3DGetBlobPart)GetProcAddress(m_DllHandle, "D3DGetBlobPart");
+-            m_FxcD3DReflect = (pD3DReflect)GetProcAddress(m_DllHandle, "D3DReflect");
++    if (!m_DxcCreateInstanceFunc)
++        throw std::runtime_error("Failed to find DxcCreateInstance in the DXC library!");
+ 
+-            if (!(m_FxcD3DCompile && m_FxcD3DGetBlobPart && m_FxcD3DReflect))
+-                throw std::runtime_error("Failed to load D3DCompiler library!");
+-        }
+-        else
+-            throw std::runtime_error("Failed to load D3DCompiler library!");
++    // Create compiler and utils.
++    HRESULT hr = m_DxcCreateInstanceFunc(CLSID_DxcUtils, IID_PPV_ARGS(&m_DxcUtils));
++    assert(SUCCEEDED(hr));
++    hr = m_DxcCreateInstanceFunc(CLSID_DxcCompiler, IID_PPV_ARGS(&m_DxcCompiler));
++    assert(SUCCEEDED(hr));
+ 
+-        break;
+-    }
+-    default:
+-        assert(false);
+-    }
++    // Create default include handler.
++    hr = m_DxcUtils->CreateDefaultIncludeHandler(&m_DxcDefaultIncludeHandler);
++    assert(SUCCEEDED(hr));
+ }
+ 
+ HLSLCompiler::~HLSLCompiler()
+@@ -333,7 +163,8 @@ HLSLCompiler::~HLSLCompiler()
+     m_DxcUtils.Release();
+     m_DxcCompiler.Release();
+ 
+-    FreeLibrary(m_DllHandle);
++    if (m_DllHandle != nullptr)
++        dlclose(m_DllHandle);
+ }
+ 
+ bool HLSLCompiler::CompileDXC(Permutation& permutation, const std::vector<std::string>& arguments, std::mutex& writeMutex)
+@@ -422,11 +253,6 @@ bool HLSLCompiler::CompileDXC(Permutation& permutation, const std::vector<std::s
+         strArgs.push_back(UTF8ToWChar(arg));
+     }
+ 
+-    if (m_backend == HLSLCompiler::GDK_SCARLETT_X64 || m_backend == HLSLCompiler::GDK_XBOXONE_X64)
+-    {
+-        strArgs.push_back(L"-Qstrip_debug");
+-    }
+-
+     std::wstring pdbPath;
+     if (m_DebugCompile)
+     {
+@@ -491,7 +317,7 @@ bool HLSLCompiler::CompileDXC(Permutation& permutation, const std::vector<std::s
+     if (!m_DisableLogs && errors != nullptr && errors->GetStringLength() != 0)
+     {
+         writeMutex.lock();
+-        fprintf(stderr, "%s[%lu]\n%s", m_ShaderFileName.c_str(), permutation.key, errors->GetStringPointer());
++        fprintf(stderr, "%s[%u]\n%s", m_ShaderFileName.c_str(), permutation.key, errors->GetStringPointer());
+         writeMutex.unlock();
+     }
+ 
+@@ -500,7 +326,7 @@ bool HLSLCompiler::CompileDXC(Permutation& permutation, const std::vector<std::s
+         // ------------------------------------------------------------------------------------------------
+         // Retrieve shader binary.
+         // ------------------------------------------------------------------------------------------------
+-        CComPtr<IDxcBlobUtf16> pShaderName = nullptr;
++        CComPtr<IDxcBlobWide> pShaderName = nullptr;
+         hlslShaderBinary->pResults->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&hlslShaderBinary->pShader), &pShaderName);
+ 
+         // ------------------------------------------------------------------------------------------------
+@@ -528,23 +354,12 @@ bool HLSLCompiler::CompileDXC(Permutation& permutation, const std::vector<std::s
+         if (shouldGeneratePDB)
+         {
+             CComPtr<IDxcBlob>      pPDB     = nullptr;
+-            CComPtr<IDxcBlobUtf16> pPDBName = nullptr;
++            CComPtr<IDxcBlobWide> pPDBName = nullptr;
+ 
+-            std::wstring pdbPath;
+-            // Use a unique name that takes the hash into consideration
+-            pdbPath = UTF8ToWChar(m_OutputPath + "\\") + UTF8ToWChar(permutation.hashDigest) + L".pdb";
++            // Use a unique name that takes the hash into consideration. There
++            // is no MAX_PATH to work around on Linux.
++            const std::wstring pdbPath = UTF8ToWChar((fs::path(m_OutputPath) / (permutation.hashDigest + ".pdb")).string());
+ 
+-
+-            // Account for longer than MAX_PATH length file paths
+-            if (pdbPath.length() > MAX_PATH - 1)
+-            {
+-                // We can get around MAX_PATH with "\\\\?\\", but this requires only having backslashes in the path (CMake uses forward slashes)
+-                size_t pos;
+-                while ((pos = pdbPath.find(L"/")) != std::wstring::npos) {
+-                    pdbPath.replace(pos, 1, L"\\");
+-                }
+-                pdbPath = L"\\\\?\\" + pdbPath;
+-            }
+             hlslShaderBinary->pResults->GetOutput(DXC_OUT_PDB, IID_PPV_ARGS(&pPDB), &pPDBName);
+ 
+             FILE* fp = NULL;
+@@ -566,196 +381,11 @@ bool HLSLCompiler::CompileDXC(Permutation& permutation, const std::vector<std::s
+     return succeeded;
+ }
+ 
+-bool HLSLCompiler::CompileFXC(Permutation&                    permutation,
+-                              const std::vector<std::string>& arguments,
+-                              std::mutex&                     writeMutex)
+-{
+-    HLSLFxcShaderBinary* hlslShaderBinary = new HLSLFxcShaderBinary();
+-
+-    permutation.shaderBinary = std::shared_ptr<HLSLFxcShaderBinary>(hlslShaderBinary);
+-
+-    // ------------------------------------------------------------------------------------------------
+-    // Setup compiler args.
+-    // ------------------------------------------------------------------------------------------------
+-    std::vector<std::string> strMacros = {};
+-    std::vector<D3D_SHADER_MACRO> macros = {};
+-    strMacros.reserve(arguments.size());
+-    macros.reserve(arguments.size());
+-
+-    const char* entryPoint = nullptr;
+-    const char* target = nullptr;
+-    bool shouldGeneratePDB = false;
+-    uint32_t flags = 0;
+-
+-    std::vector<fs::path> includePaths;
+-
+-    for (auto i = 0; i < arguments.size(); ++i)
+-    {
+-        if (arguments[i] == "-E")
+-        {
+-            entryPoint = arguments[++i].c_str();
+-        }
+-        if (arguments[i] == "-T")
+-        {
+-            target = arguments[++i].c_str();
+-        }
+-        if (arguments[i] == "-Zi" || arguments[i] == "-Zs")
+-        {
+-            shouldGeneratePDB = true;
+-            flags |= D3DCOMPILE_DEBUG;
+-        }
+-        if (arguments[i] == "-I")
+-        {
+-            includePaths.push_back(arguments[++i].c_str());
+-        }
+-        if (arguments[i] == "-Od")
+-        {
+-            flags |= D3DCOMPILE_SKIP_OPTIMIZATION;
+-        }
+-        if (arguments[i] == "-O0")
+-        {
+-            flags |= D3DCOMPILE_OPTIMIZATION_LEVEL0;
+-        }
+-        if (arguments[i] == "-O1")
+-        {
+-            flags |= D3DCOMPILE_OPTIMIZATION_LEVEL1;
+-        }
+-        if (arguments[i] == "-O2")
+-        {
+-            flags |= D3DCOMPILE_OPTIMIZATION_LEVEL2;
+-        }
+-        if (arguments[i] == "-O3")
+-        {
+-            flags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
+-        }
+-        if (arguments[i] == "-D")
+-        {
+-            const std::string& arg = arguments[++i];
+-            size_t idx = arg.find_first_of('=');
+-            strMacros.push_back(arg.substr(0, idx));
+-            if (idx != std::string::npos)
+-            {
+-                strMacros.push_back(arg.substr(idx + 1));
+-            }
+-            else
+-            {
+-                strMacros.push_back("");
+-            }
+-            macros.push_back({ strMacros[strMacros.size() - 2].c_str(), strMacros[strMacros.size() - 1].c_str() });
+-        }
+-    }
+-    macros.push_back({ nullptr, nullptr });
+-
+-    if (m_DebugCompile)
+-    {
+-        shouldGeneratePDB = true;
+-        flags |= D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_DEBUG;
+-    }
+-
+-    CComPtr<ID3DBlob> pError = nullptr;
+-
+-    FxcCustomIncludeHandler customIncludeHandler;
+-    customIncludeHandler.sourcePath = permutation.sourcePath;
+-    customIncludeHandler.includeSearchPaths = std::move(includePaths);
+-
+-    HRESULT hr = m_FxcD3DCompile(m_Source.c_str(),
+-                                 m_Source.size(),
+-                                 permutation.sourcePath.generic_string().c_str(),
+-                                 macros.data(),
+-                                 &customIncludeHandler,
+-                                 entryPoint,
+-                                 target,
+-                                 flags,
+-                                 0,
+-                                 &hlslShaderBinary->pShader,
+-                                 &pError);
+-
+-    bool succeeded = !FAILED(hr);
+-
+-    if (!m_DisableLogs && pError != nullptr)
+-    {
+-        writeMutex.lock();
+-        printf("%s[%lu]\n%s",
+-            m_ShaderFileName.c_str(),
+-            permutation.key,
+-            (char*)pError->GetBufferPointer());
+-        writeMutex.unlock();
+-    }
+-
+-    if(succeeded)
+-    {
+-        permutation.dependencies = std::move(customIncludeHandler.dependencies);
+-
+-        // ------------------------------------------------------------------------------------------------
+-        // Retrieve shader hash
+-        // ------------------------------------------------------------------------------------------------
+-        DWORD hash[4];
+-
+-        if (CalculateDXBCChecksum(hlslShaderBinary->BufferPointer(), hlslShaderBinary->BufferSize(), hash))
+-        {
+-            std::stringstream s;
+-            s << std::setfill('0') << std::hex;
+-
+-            for (int i = 0; i < 4; ++i)
+-                s << std::setw(8) << (uint32_t)hash[i];
+-
+-            permutation.hashDigest = s.str();
+-        }
+-
+-        // ------------------------------------------------------------------------------------------------
+-        // Dump PDB if required
+-        // ------------------------------------------------------------------------------------------------
+-        if (shouldGeneratePDB)
+-        {
+-            CComPtr<ID3DBlob> pPDB     = nullptr;
+-            CComPtr<ID3DBlob> pPDBName = nullptr;
+-
+-            m_FxcD3DGetBlobPart(hlslShaderBinary->BufferPointer(), hlslShaderBinary->BufferSize(), D3D_BLOB_PDB, 0, &pPDB);
+-
+-            FILE* fp = NULL;
+-
+-            std::string pdbName = permutation.hashDigest + ".pdb";
+-            std::string pathToPDB = m_OutputPath + "\\" + pdbName;
+-
+-            // Account for longer than MAX_PATH length file paths
+-            if (pathToPDB.length() > MAX_PATH - 1)
+-            {
+-                // We can get around MAX_PATH with "\\\\?\\", but this requires only having backslashes in the path (CMake uses forward slashes)
+-                size_t pos;
+-                while ((pos = pathToPDB.find("/")) != std::string::npos) {
+-                    pathToPDB.replace(pos, 1, "\\");
+-                }
+-                pathToPDB = "\\\\?\\" + pathToPDB;
+-            }
+-
+-            fp = fopen(pathToPDB.c_str(), "wb");
+-            fwrite(pPDB->GetBufferPointer(), pPDB->GetBufferSize(), 1, fp);
+-            fclose(fp);
+-        }
+-
+-        permutation.name           = m_ShaderName + "_" + permutation.hashDigest;
+-        permutation.headerFileName = permutation.name + ".h";
+-    }
+-
+-    return succeeded;
+-}
+-
+ bool HLSLCompiler::Compile(Permutation&                    permutation,
+                            const std::vector<std::string>& arguments,
+                            std::mutex&                     writeMutex)
+ {
+-    switch (m_backend)
+-    {
+-    case HLSLCompiler::DXC:
+-    case HLSLCompiler::GDK_SCARLETT_X64:
+-    case HLSLCompiler::GDK_XBOXONE_X64:
+-        return CompileDXC(permutation, arguments, writeMutex);
+-    case HLSLCompiler::FXC:
+-        return CompileFXC(permutation, arguments, writeMutex);
+-    default:
+-        assert(false);
+-        return false;
+-    }
++    return CompileDXC(permutation, arguments, writeMutex);
+ }
+ 
+ bool HLSLCompiler::ExtractDXCReflectionData(Permutation& permutation)
+@@ -837,112 +467,9 @@ bool HLSLCompiler::ExtractDXCReflectionData(Permutation& permutation)
+         return false;
+ }
+ 
+-bool HLSLCompiler::ExtractFXCReflectionData(Permutation& permutation)
+-{
+-    IShaderBinary* hlslShaderBinary = reinterpret_cast<HLSLFxcShaderBinary*>(permutation.shaderBinary.get());
+-    permutation.reflectionData = std::make_shared<IReflectionData>();
+-
+-    IReflectionData* hlslReflectionData = reinterpret_cast<IReflectionData*>(permutation.reflectionData.get());
+-
+-    CComPtr<ID3D11ShaderReflection> pReflection;
+-    m_FxcD3DReflect(hlslShaderBinary->BufferPointer(), hlslShaderBinary->BufferSize(), IID_ID3D11ShaderReflection, (void**)&pReflection);
+-
+-    if (pReflection != nullptr)
+-    {
+-        D3D11_SHADER_DESC desc;
+-        pReflection->GetDesc(&desc);
+-
+-        std::string lastResourceName;
+-        uint32_t bindCount = 1;
+-        for (auto i = 0; i < desc.BoundResources; ++i)
+-        {
+-            D3D11_SHADER_INPUT_BIND_DESC bindDesc;
+-            pReflection->GetResourceBindingDesc(i, &bindDesc);
+-
+-            std::string resourceName(bindDesc.Name);
+-
+-            // only count the first bind of an array
+-            auto idx = resourceName.find_first_of('[');
+-            if (idx != std::string::npos)
+-            {
+-                resourceName = resourceName.substr(0, idx);
+-            }
+-
+-            if (resourceName == lastResourceName)
+-            {
+-                ++bindCount;
+-                continue;
+-            }
+-            else
+-            {
+-                lastResourceName = resourceName;
+-            }
+-            ShaderResourceInfo resourceInfo = { resourceName, bindDesc.BindPoint, bindCount, 1 };
+-
+-            switch (bindDesc.Type)
+-            {
+-            case D3D_SIT_CBUFFER:
+-                hlslReflectionData->constantBuffers.push_back(resourceInfo);
+-                break;
+-            case D3D_SIT_TEXTURE:
+-                hlslReflectionData->srvTextures.push_back(resourceInfo);
+-                break;
+-            case D3D_SIT_SAMPLER:
+-                hlslReflectionData->samplers.push_back(resourceInfo);
+-                break;
+-            case D3D_SIT_UAV_RWTYPED:
+-                hlslReflectionData->uavTextures.push_back(resourceInfo);
+-                break;
+-            case D3D_SIT_STRUCTURED:
+-                hlslReflectionData->srvBuffers.push_back(resourceInfo);
+-                break;
+-            case D3D_SIT_UAV_RWSTRUCTURED:
+-                hlslReflectionData->uavBuffers.push_back(resourceInfo);
+-                break;
+-            case D3D_SIT_RTACCELERATIONSTRUCTURE:
+-                hlslReflectionData->rtAccelerationStructures.push_back(resourceInfo);
+-                break;
+-
+-            case D3D_SIT_BYTEADDRESS:
+-                hlslReflectionData->srvBuffers.push_back(resourceInfo);
+-                break;
+-            case D3D_SIT_UAV_RWBYTEADDRESS:
+-                hlslReflectionData->uavBuffers.push_back(resourceInfo);
+-                break;
+-
+-            case D3D_SIT_UAV_APPEND_STRUCTURED:
+-            case D3D_SIT_UAV_CONSUME_STRUCTURED:
+-            case D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER:
+-            case D3D_SIT_UAV_FEEDBACKTEXTURE:
+-            case D3D_SIT_TBUFFER:
+-            default:
+-                throw std::runtime_error("Shader uses an unsupported resource type!");
+-                break;
+-            }
+-
+-            bindCount = 1;
+-        }
+-
+-        return true;
+-    }
+-    else
+-        return false;
+-}
+-
+ bool HLSLCompiler::ExtractReflectionData(Permutation& permutation)
+ {
+-    switch (m_backend)
+-    {
+-    case HLSLCompiler::DXC:
+-    case HLSLCompiler::GDK_SCARLETT_X64:
+-    case HLSLCompiler::GDK_XBOXONE_X64:
+-        return ExtractDXCReflectionData(permutation);
+-    case HLSLCompiler::FXC:
+-        return ExtractFXCReflectionData(permutation);
+-    default:
+-        assert(false);
+-        return false;
+-    }
++    return ExtractDXCReflectionData(permutation);
+ }
+ 
+ void HLSLCompiler::WriteBinaryHeaderReflectionData(FILE* fp, const Permutation& permutation, std::mutex& writeMutex)
+diff --git a/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.h b/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.h
+index d5761c3..07400e7 100644
+--- a/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.h
++++ b/sdk/tools/ffx_shader_compiler/src/hlsl_compiler.h
+@@ -24,19 +24,8 @@
+ 
+ #include "compiler.h"
+ 
+-
+-typedef HRESULT (*pD3DGetBlobPart)
+-    (LPCVOID pSrcData,
+-     SIZE_T SrcDataSize,
+-     D3D_BLOB_PART Part,
+-     UINT Flags,
+-     ID3DBlob** ppPart);
+-
+-typedef HRESULT (*pD3DReflect)
+-    (LPCVOID pSrcData,
+-     SIZE_T SrcDataSize,
+-     REFIID pInterface,
+-     void** ppReflector);
++// Linux port: the FXC (D3DCompiler_47.dll) and GDK console backends are
++// Windows-only and are dropped from this build; only the DXC backend remains.
+ 
+ /// The DXC (HLSL) specialization of <c><i>IShaderBinary</i></c> interface.
+ /// Handles everything necessary to export DXC compiled binary shader data.
+@@ -64,31 +53,6 @@ struct HLSLDxcShaderBinary : public IShaderBinary
+     size_t   BufferSize() override;
+ };
+ 
+-/// The FXC (HLSL) specialization of <c><i>IShaderBinary</i></c> interface.
+-/// Handles everything necessary to export DXC compiled binary shader data.
+-///
+-/// @ingroup ShaderCompiler
+-struct HLSLFxcShaderBinary : public IShaderBinary
+-{
+-    CComPtr<ID3DBlob> pShader;          ///< ID3DBlob shader blob data for this shader binary
+-
+-    /// HLSL (FXC) Shader binary buffer accessor. 
+-    ///
+-    /// @returns
+-    /// Pointer to the internal HLSL (FXC) buffer representation.
+-    ///
+-    /// @ingroup ShaderCompiler
+-    uint8_t* BufferPointer() override;
+-
+-    /// Queries the HLSL (FXC) shader binary size.
+-    ///
+-    /// @returns
+-    /// Size of the HLSL (FXC) shader binary
+-    ///
+-    /// @ingroup ShaderCompiler
+-    size_t   BufferSize() override;
+-};
+-
+ /// The HLSLCompiler specialization of <c><i>ICompiler</i></c> interface.
+ /// Handles everything necessary to compile and extract shader reflection data
+ /// for HSLS and then exports the binary and reflection data for consumption
+@@ -104,17 +68,14 @@ public:
+     /// @ingroup ShaderCompiler
+     enum Backend
+     {
+-        DXC,                    ///< Use included DXC compiler processes
+-        GDK_SCARLETT_X64,       ///< Use GDK-provided shader compiler dll (requires the GDK be installed)
+-        GDK_XBOXONE_X64,        ///< Use GDK-provided shader compiler dll (requires the GDK be installed)
+-        FXC                     ///< Use included FXC compiler processes
++        DXC                     ///< Use the DXC compiler library
+     };
+ 
+ public:
+     /// HLSL Compiler construction function
+     /// 
+     /// @param [in]  backend            The backend HLSL compile process to use
+-    /// @param [in]  dll                DXC/FXC DLL override to use when compiling
++    /// @param [in]  dll                DXC shared library override to use when compiling
+     /// @param [in]  shaderPath         Path to the shader to compile
+     /// @param [in]  shaderName         Shader entry point
+     /// @param [in]  shaderFileName     Filename of the shader file to compile
+@@ -205,12 +166,7 @@ private:
+                     const std::vector<std::string>& arguments,
+                     std::mutex&                     writeMutex);
+ 
+-    bool CompileFXC(Permutation&                    permutation,
+-                    const std::vector<std::string>& arguments,
+-                    std::mutex&                     writeMutex);
+-
+     bool ExtractDXCReflectionData(Permutation& permutation);
+-    bool ExtractFXCReflectionData(Permutation& permutation);
+ 
+ private:
+     Backend                     m_backend;
+@@ -222,10 +178,5 @@ private:
+     CComPtr<IDxcIncludeHandler> m_DxcDefaultIncludeHandler;
+     DxcCreateInstanceProc       m_DxcCreateInstanceFunc;
+ 
+-    // FXC backend
+-    pD3DCompile                 m_FxcD3DCompile;
+-    pD3DGetBlobPart             m_FxcD3DGetBlobPart;
+-    pD3DReflect                 m_FxcD3DReflect;
+-
+-    HMODULE                     m_DllHandle;
++    void*                       m_DllHandle;
+ };
+diff --git a/sdk/tools/ffx_shader_compiler/src/pch.hpp b/sdk/tools/ffx_shader_compiler/src/pch.hpp
+index c017698..4ca0fc6 100644
+--- a/sdk/tools/ffx_shader_compiler/src/pch.hpp
++++ b/sdk/tools/ffx_shader_compiler/src/pch.hpp
+@@ -22,14 +22,25 @@
+ 
+ #pragma once
+ 
+-#define NOMINMAX
+-#define WIN32_LEAN_AND_MEAN
+-#include <Windows.h>
+-#include <atlcomcli.h>
+-#include <dxcapi.h>
+-#include <d3dcompiler.h>
++// Linux port: DXC's own WinAdapter.h supplies the Windows types this tool
++// needs (HRESULT, GUID, IUnknown, CComPtr, IID_PPV_ARGS), so <Windows.h>,
++// <atlcomcli.h> and the FXC-only <d3dcompiler.h> are all dropped.
++#include "dxc/WinAdapter.h"
++#include "dxc/dxcapi.h"
++
++// Shader reflection. DirectX-Headers' d3d12shader.h has to be told what an
++// `interface` is on non-Windows compilers -- this mirrors what DXC does in
++// its own include/dxc/Support/D3DReflection.h.
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
++#define interface struct
++#include <d3d12shader.h>
++#undef interface
++#pragma GCC diagnostic pop
++
+ #include <assert.h>
+ #include <stdio.h>
++#include <cmath>
+ #include <exception>
+ #include <string>
+ #include <vector>
+@@ -44,11 +55,7 @@
+ #include <iostream>
+ #include <algorithm>
+ #include <fstream>
+-#include <d3d12shader.h>
+ 
+ #include <filesystem>
+ namespace fs = std::filesystem;
+ 
+-#include <process.hpp>
+-namespace tpl = TinyProcessLib;
+-
+diff --git a/sdk/tools/ffx_shader_compiler/src/utils.cpp b/sdk/tools/ffx_shader_compiler/src/utils.cpp
+index 0b92936..eda3535 100644
+--- a/sdk/tools/ffx_shader_compiler/src/utils.cpp
++++ b/sdk/tools/ffx_shader_compiler/src/utils.cpp
+@@ -22,30 +22,96 @@
+ 
+ #include "utils.h"
+ 
++// Linux port: MultiByteToWideChar/WideCharToMultiByte are Win32-only. glibc's
++// wchar_t is a 4-byte UTF-32 code unit, so the conversion is a plain UTF-8
++// encode/decode with no locale involvement -- std::codecvt is deprecated and
++// std::mbstowcs would depend on the caller's locale being UTF-8.
++
+ std::string WCharToUTF8(const std::wstring& wstr)
+ {
+-    if (wstr.empty())
+-        return std::string();
++    std::string str;
++    str.reserve(wstr.size());
+ 
+-    int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.size(), nullptr, 0, nullptr, nullptr);
++    for (wchar_t wideChar : wstr)
++    {
++        const uint32_t codePoint = static_cast<uint32_t>(wideChar);
+ 
+-    std::string str;
+-    str.resize(size);
+-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.size(), &str[0], size, nullptr, nullptr);
++        if (codePoint < 0x80)
++            str.push_back(static_cast<char>(codePoint));
++        else if (codePoint < 0x800)
++        {
++            str.push_back(static_cast<char>(0xC0 | (codePoint >> 6)));
++            str.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
++        }
++        else if (codePoint < 0x10000)
++        {
++            str.push_back(static_cast<char>(0xE0 | (codePoint >> 12)));
++            str.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
++            str.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
++        }
++        else
++        {
++            str.push_back(static_cast<char>(0xF0 | (codePoint >> 18)));
++            str.push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F)));
++            str.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
++            str.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
++        }
++    }
+ 
+     return str;
+ }
+ 
+ std::wstring UTF8ToWChar(const std::string& str)
+ {
+-    if (str.empty())
+-        return std::wstring();
++    std::wstring wstr;
++    wstr.reserve(str.size());
+ 
+-    int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.size(), nullptr, 0);
++    for (size_t i = 0; i < str.size();)
++    {
++        const uint8_t lead = static_cast<uint8_t>(str[i]);
+ 
+-    std::wstring wstr;
+-    wstr.resize(size);
+-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.size(), &wstr[0], size);
++        uint32_t codePoint    = 0;
++        size_t   continuation = 0;
++
++        if (lead < 0x80)
++        {
++            codePoint = lead;
++        }
++        else if ((lead & 0xE0) == 0xC0)
++        {
++            codePoint    = lead & 0x1F;
++            continuation = 1;
++        }
++        else if ((lead & 0xF0) == 0xE0)
++        {
++            codePoint    = lead & 0x0F;
++            continuation = 2;
++        }
++        else if ((lead & 0xF8) == 0xF0)
++        {
++            codePoint    = lead & 0x07;
++            continuation = 3;
++        }
++        else
++        {
++            // Not a valid lead byte; substitute and resynchronise.
++            wstr.push_back(L'\uFFFD');
++            ++i;
++            continue;
++        }
++
++        if (i + continuation >= str.size())
++        {
++            wstr.push_back(L'\uFFFD');
++            break;
++        }
++
++        for (size_t j = 1; j <= continuation; j++)
++            codePoint = (codePoint << 6) | (static_cast<uint8_t>(str[i + j]) & 0x3F);
++
++        wstr.push_back(static_cast<wchar_t>(codePoint));
++        i += continuation + 1;
++    }
+ 
+     return wstr;
+ }
+diff --git a/sdk/tools/ffx_shader_compiler/src/utils.h b/sdk/tools/ffx_shader_compiler/src/utils.h
+index ff57b45..75dd547 100644
+--- a/sdk/tools/ffx_shader_compiler/src/utils.h
++++ b/sdk/tools/ffx_shader_compiler/src/utils.h
+@@ -23,7 +23,6 @@
+ #pragma once
+ 
+ #include "pch.hpp"
+-#include "DXBCChecksum.h"
+ 
+ std::string WCharToUTF8(const std::wstring& wstr);
+ std::wstring UTF8ToWChar(const std::string& str);

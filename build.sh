@@ -15,8 +15,8 @@
 # The SE1 archive's DXVK files are the patched build (Patches/dxvk/), shared
 # byte-identically with the SE2 archive, as is libSDL3.so — the library DXVK's
 # WSI driver dlopens — and nothing is built twice.
-# Everything new with the SE2 port (vkd3d-proton, DXC, FMOD) ships in the SE2
-# archive only; the Steam bits ship in their own archive so a Steamworks
+# Everything new with the SE2 port (vkd3d-proton, DXC, FidelityFX, FMOD) ships
+# in the SE2 archive only; the Steam bits ship in their own archive so a Steamworks
 # update does not republish the game-specific payloads.
 #
 # Pipeline (in order):
@@ -33,22 +33,28 @@
 #   5. Scripts/build_dxc.sh             Patched DirectX Shader Compiler
 #                                       v1.9.2607 (libdxcompiler.so), staged
 #                                       straight into Libraries-SE2/
-#   6. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so)
-#   7. Scripts/build_steamworks_net.sh  Steamworks.NET.dll, staged straight
+#   6. Scripts/build_fidelityfx.sh      AMD FSR 3.1.5 upscaler
+#                                       (libamd_fidelityfx_loader_dx12.so) +
+#                                       Patches/fidelityfx/, staged straight
+#                                       into Libraries-SE2/. Runs after
+#                                       vkd3d-proton, whose headers it
+#                                       compiles the DX12 backend against.
+#   7. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so)
+#   8. Scripts/build_steamworks_net.sh  Steamworks.NET.dll, staged straight
 #                                       into Libraries-Steam/
-#   8. Shared-artefact copy:            the patched DXVK files from
+#   9. Shared-artefact copy:            the patched DXVK files from
 #                                       Libraries/ into Libraries-SE2/
-#   9. Vendor copy:                     libEOSSDK-Linux-Shipping.so -> SE1,
+#  10. Vendor copy:                     libEOSSDK-Linux-Shipping.so -> SE1,
 #                                       libsteam_api.so -> Steam
 #                                       (proprietary, committed under Vendor/)
-#  10. SE2 vendor copy:                 the FMOD runtime from Vendor/, staged
+#  11. SE2 vendor copy:                 the FMOD runtime from Vendor/, staged
 #                                       under the bare names (libfmod.so +
 #                                       libfmodstudio.so)
-#  11. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
+#  12. License copy:                    Licenses/*.txt -> LICENSES/ (SE1);
 #                                       DXVK + Licenses/se2/*.txt -> LICENSES/ (SE2);
 #                                       Licenses/steam/*.txt -> LICENSES/ (Steam)
-#  12. Final assertion:                 every expected artefact is present
-#  13. Package:                         all three archives under dist/
+#  13. Final assertion:                 every expected artefact is present
+#  14. Package:                         all three archives under dist/
 #
 # The native wrapper libraries (libD3DCompiler.so, libHavok.so,
 # libRecastDetour.so, libVRageNative.so) are deliberately NOT part of this
@@ -115,7 +121,7 @@ for arg in "$@"; do
         --no-package) DO_PACKAGE=0 ;;
         --only=*)     ONLY="${arg#--only=}" ;;
         --skip=*)     SKIP="${arg#--skip=}" ;;
-        -h|--help)    sed -n '2,59p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,65p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
@@ -128,7 +134,7 @@ fi
 # Reject unknown step names. Without this a typo (--only=steamworks_net with an
 # underscore) matches nothing, silently skips every build, and reports only
 # that staging is incomplete.
-STEP_NAMES="ffmpeg sdl3 dxvk vkd3d-proton dxc openal steamworks-net"
+STEP_NAMES="ffmpeg sdl3 dxvk vkd3d-proton dxc fidelityfx openal steamworks-net"
 for spec in "$ONLY" "$SKIP"; do
     [ -n "$spec" ] || continue
     IFS=',' read -ra names <<< "$spec"
@@ -184,7 +190,7 @@ echo "==> SE2 staging dir   : $LIBRARIES_SE2_DIR"
 echo "==> Steam staging dir : $LIBRARIES_STEAM_DIR"
 echo "==> Output dir        : $OUTPUT_DIR"
 
-# ---- 1..7. per-dependency build scripts ------------------------------------
+# ---- 1..8. per-dependency build scripts ------------------------------------
 
 run_step() {
     local name="$1"; shift
@@ -210,10 +216,16 @@ run_step sdl3           "$SCRIPTS_DIR/build_sdl3.sh"
 run_step dxvk           "$SCRIPTS_DIR/build_dxvk.sh"
 run_step vkd3d-proton   "$SCRIPTS_DIR/build_vkd3d_proton.sh"
 run_step dxc            "$SCRIPTS_DIR/build_dxc.sh"
+# After vkd3d-proton on purpose: the FidelityFX DX12 backend compiles against
+# vkd3d-proton's installed headers, so its ID3D12Device vtable is by
+# construction the one the game passes in. build_fidelityfx.sh invokes
+# build_vkd3d_proton.sh itself if those headers are not there yet, which leaves
+# that inner invocation a cached no-op here.
+run_step fidelityfx     "$SCRIPTS_DIR/build_fidelityfx.sh"
 run_step openal         "$SCRIPTS_DIR/build_openal.sh"
 run_step steamworks-net "$SCRIPTS_DIR/build_steamworks_net.sh"
 
-# ---- 8. shared artefacts: patched DXVK -> Libraries-SE2/ --------------------
+# ---- 9. shared artefacts: patched DXVK -> Libraries-SE2/ -------------------
 # The patched DXVK libraries ship in BOTH archives but are built only once,
 # into Libraries/. Copy them into the SE2 staging tree. Skipped file-by-file
 # under --only / --skip filters, when the source files were not staged this
@@ -239,7 +251,7 @@ for f in "${SHARED_FILES[@]}"; do
     fi
 done
 
-# ---- 9. Vendor blobs --------------------------------------------------------
+# ---- 10. Vendor blobs -------------------------------------------------------
 
 echo
 echo "############################################################"
@@ -261,7 +273,7 @@ for spec in "libEOSSDK-Linux-Shipping.so:$LIBRARIES_DIR" \
     echo "  copied $blob -> ${dest##*/}/"
 done
 
-# ---- 10. SE2 vendor blobs (FMOD) --------------------------------------------
+# ---- 11. SE2 vendor blobs (FMOD) --------------------------------------------
 # The proprietary FMOD Engine runtime (login-gated download, committed under
 # Vendor/ like EOS and Steamworks). SE1 does not use FMOD, so it ships only
 # in the SE2 archive. The committed files keep their upstream SONAME names
@@ -289,7 +301,7 @@ for name in libfmod libfmodstudio; do
     echo "  copied $name.so.14 -> $name.so"
 done
 
-# ---- 11. Licenses -----------------------------------------------------------
+# ---- 12. Licenses -----------------------------------------------------------
 # SE1 archive: every top-level Licenses/*.txt. SE2 archive: the notices for
 # the artefacts shared with SE1 (DXVK, SDL3) plus the SE2-specific ones under
 # Licenses/se2/. Steam archive: the notices under Licenses/steam/. The
@@ -319,7 +331,7 @@ for f in "$LICENSES_SRC"/steam/*.txt; do
 done
 shopt -u nullglob
 
-# ---- 12. final assertion ----------------------------------------------------
+# ---- 13. final assertion ----------------------------------------------------
 # Confirm every artefact every consumer expects is present. Missing files here
 # are far easier to debug than a cryptic failure inside a consumer's build.
 #
@@ -373,6 +385,8 @@ EXPECTED_FILES_SE2=(
     libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so
     # Patched DXC (libdxil.so is deliberately absent)
     libdxcompiler.so
+    # AMD FidelityFX FSR 3.1.5 upscaler
+    libamd_fidelityfx_loader_dx12.so
     # FMOD (vendor blobs staged under bare names)
     libfmod.so
     libfmodstudio.so
@@ -381,6 +395,8 @@ EXPECTED_FILES_SE2=(
     LICENSES/DXC-LICENSE.txt
     LICENSES/DXC-README.txt
     LICENSES/DXVK-LICENSE.txt
+    LICENSES/FidelityFX-LICENSE.txt
+    LICENSES/FidelityFX-README.txt
     LICENSES/FMOD-EULA.txt
     LICENSES/FMOD-NOTICE.txt
     LICENSES/README.txt
@@ -428,7 +444,7 @@ echo
 echo "==> All expected artefacts present in $LIBRARIES_STEAM_DIR"
 ( cd "$LIBRARIES_STEAM_DIR" && ls -lh | sed 's/^/  /' )
 
-# ---- 13. package ------------------------------------------------------------
+# ---- 14. package ------------------------------------------------------------
 # Each archive mirrors its staging tree exactly: every library at the archive
 # root plus a LICENSES/ subdir, no symlinks, no version-suffixed filenames.
 # Consumers extract it straight into their own Libraries staging folder, so

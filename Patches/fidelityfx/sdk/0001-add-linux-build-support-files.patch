@@ -1,0 +1,342 @@
+diff --git a/Kits/FidelityFX/amdinternal/api/internal/ffx_watermark.h b/Kits/FidelityFX/amdinternal/api/internal/ffx_watermark.h
+new file mode 100644
+index 0000000..cf1c76b
+--- /dev/null
++++ b/Kits/FidelityFX/amdinternal/api/internal/ffx_watermark.h
+@@ -0,0 +1,31 @@
++// This file is not part of the upstream FidelityFX SDK. It is added by the
++// Space Engineers 2 Linux dependency build (Patches/fidelityfx/).
++//
++// FfxWatermark draws AMD's debug watermark over the upscaled output. Its
++// implementation lives in AMD's closed "amdinternal" tree and has no public
++// source, so this build supplies a stub: the overlay is only ever constructed
++// when the MLSR-WATERMARK environment variable is set, and it renders nothing.
++
++#pragma once
++
++#include "../../../api/internal/ffx_interface.h"
++
++class FfxWatermark
++{
++public:
++    FfxWatermark(FfxInterface* backendInterface, FfxUInt32 effectContextId)
++        : m_backendInterface(backendInterface)
++        , m_effectContextId(effectContextId)
++    {
++    }
++
++    void Dispatch(FfxResourceInternal target, const char* message)
++    {
++        FFX_UNUSED(target);
++        FFX_UNUSED(message);
++    }
++
++private:
++    FfxInterface* m_backendInterface;
++    FfxUInt32     m_effectContextId;
++};
+diff --git a/Kits/FidelityFX/amdinternal/api/internal/git_hash_branch.h b/Kits/FidelityFX/amdinternal/api/internal/git_hash_branch.h
+new file mode 100644
+index 0000000..4fdaeef
+--- /dev/null
++++ b/Kits/FidelityFX/amdinternal/api/internal/git_hash_branch.h
+@@ -0,0 +1,11 @@
++// This file is not part of the upstream FidelityFX SDK. It is added by the
++// Space Engineers 2 Linux dependency build (Patches/fidelityfx/).
++//
++// AMD's own builds generate this header from their internal repository. The
++// two macros are used in exactly one place: the text of the MLSR-WATERMARK
++// debug overlay, which this build stubs out (see ffx_watermark.h).
++
++#pragma once
++
++#define GIT_HASH           "FidelityFX-SDK v2.3.0"
++#define GIT_COMMIT_SUBJECT "GPUOpen-LibrariesAndSDKs/FidelityFX-SDK"
+diff --git a/Kits/FidelityFX/api/internal/ffx_linux_compat.h b/Kits/FidelityFX/api/internal/ffx_linux_compat.h
+new file mode 100644
+index 0000000..08baad3
+--- /dev/null
++++ b/Kits/FidelityFX/api/internal/ffx_linux_compat.h
+@@ -0,0 +1,76 @@
++// This file is not part of the upstream FidelityFX SDK. It is added by the
++// Space Engineers 2 Linux dependency build (Patches/fidelityfx/) and is
++// force-included into every translation unit with -include.
++//
++// It provides the handful of MSVC-only CRT "secure" functions the SDK calls.
++// Everything else the SDK needs from Windows is either already guarded by
++// _WIN32 upstream or patched out.
++
++#pragma once
++
++#include <cstddef>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <cwchar>
++
++// sprintf_s/swprintf_s take (buffer, count, format, ...) exactly like their
++// portable counterparts, so a plain rename is enough.
++#define _countof(array) (sizeof(array) / sizeof((array)[0]))
++
++#define sprintf_s  snprintf
++#define swprintf_s swprintf
++
++/// MSVC's array-form wcscpy_s: the destination size comes from the array type.
++template <size_t bufferSize>
++inline int wcscpy_s(wchar_t (&destination)[bufferSize], const wchar_t* source)
++{
++    if (source == nullptr)
++        return 22;  // EINVAL
++
++    size_t length = wcslen(source);
++    if (length >= bufferSize)
++        length = bufferSize - 1;
++
++    wmemcpy(destination, source, length);
++    destination[length] = L'\0';
++    return 0;
++}
++
++/// MSVC's array-form strncpy_s. Truncates rather than failing: the only call
++/// site copies a provider version name into a fixed-size buffer.
++template <size_t bufferSize>
++inline int strncpy_s(char (&destination)[bufferSize], const char* source, size_t count)
++{
++    if (source == nullptr)
++        return 22;  // EINVAL
++
++    size_t limit  = count < bufferSize ? count : bufferSize - 1;
++    size_t length = strnlen(source, limit);
++
++    memcpy(destination, source, length);
++    destination[length] = '\0';
++    return 0;
++}
++
++/// MSVC's getenv_s. The SDK only uses it to test for the presence of a
++/// variable, but the full contract is cheap enough to honour.
++inline int getenv_s(size_t* requiredSize, char* buffer, size_t bufferSize, const char* name)
++{
++    const char* value = getenv(name);
++
++    if (requiredSize != nullptr)
++        *requiredSize = value == nullptr ? 0 : strlen(value) + 1;
++
++    if (buffer == nullptr || bufferSize == 0)
++        return 0;
++
++    buffer[0] = '\0';
++    if (value == nullptr)
++        return 0;
++    if (strlen(value) + 1 > bufferSize)
++        return 34;  // ERANGE
++
++    memcpy(buffer, value, strlen(value) + 1);
++    return 0;
++}
+diff --git a/Kits/FidelityFX/api/internal/ffx_providers_linux.cpp b/Kits/FidelityFX/api/internal/ffx_providers_linux.cpp
+new file mode 100644
+index 0000000..caa854e
+--- /dev/null
++++ b/Kits/FidelityFX/api/internal/ffx_providers_linux.cpp
+@@ -0,0 +1,38 @@
++// This file is not part of the upstream FidelityFX SDK. It is added by the
++// Space Engineers 2 Linux dependency build (Patches/fidelityfx/).
++//
++// ffx_provider.h declares GetProvider() and GetProviderVersions() but leaves
++// them undefined: each of AMD's shipping loader DLLs supplies its own
++// definition naming the providers that DLL was built with. The open source
++// tree contains no such file, so this build provides one.
++//
++// The only provider compiled in is FSR 3.1.5. FSR 4.x is distributed as a
++// prebuilt Windows DLL with no source, and the driver-side ("external")
++// provider lives behind FFX_BACKEND_DX12 in AMD's closed amdinternal tree, so
++// neither can be part of a from-source Linux build.
++
++#include "ffx_provider.h"
++
++#include "../../upscalers/fsr3/include/ffx_provider_fsr3upscale.h"
++
++static ffxProvider* const s_providers[] = {
++    &ffxProvider_FSR3Upscale::GetInstance(),
++};
++
++ffxProvider* GetProvider(ffxStructType_t                     descType,
++                         uint64_t                            overrideId,
++                         void*                               device,
++                         std::optional<ffxProviderExternal>& extProviderSlot)
++{
++    return GetProvider(descType, overrideId, device, extProviderSlot, s_providers);
++}
++
++uint64_t GetProviderVersions(ffxStructType_t                     descType,
++                             void*                               device,
++                             uint64_t                            capacity,
++                             uint64_t*                           versionIds,
++                             const char**                        versionNames,
++                             std::optional<ffxProviderExternal>& extProviderSlot)
++{
++    return GetProviderVersions(descType, device, capacity, versionIds, versionNames, extProviderSlot, s_providers);
++}
+diff --git a/Kits/FidelityFX/backend/dx12/ffx_dx12_helpers.h b/Kits/FidelityFX/backend/dx12/ffx_dx12_helpers.h
+new file mode 100644
+index 0000000..8db9fdd
+--- /dev/null
++++ b/Kits/FidelityFX/backend/dx12/ffx_dx12_helpers.h
+@@ -0,0 +1,156 @@
++// This file is not part of the upstream FidelityFX SDK. It is added by the
++// Space Engineers 2 Linux dependency build (Patches/fidelityfx/).
++//
++// It replaces the six helpers ffx_dx12.cpp uses out of Microsoft's 343 KB
++// d3dx12.h, which is MSVC-only (it pulls in <wrl/client.h> and <atlbase.h>).
++// The semantics match the originals for the arguments the backend passes.
++
++#pragma once
++
++#include <d3d12.h>
++
++struct CD3DX12_HEAP_PROPERTIES : public D3D12_HEAP_PROPERTIES
++{
++    explicit CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE heapType)
++    {
++        Type                 = heapType;
++        CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
++        MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
++        CreationNodeMask     = 1;
++        VisibleNodeMask      = 1;
++    }
++};
++
++struct CD3DX12_RESOURCE_DESC : public D3D12_RESOURCE_DESC
++{
++    static CD3DX12_RESOURCE_DESC Buffer(UINT64 width, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, UINT64 alignment = 0)
++    {
++        CD3DX12_RESOURCE_DESC description{};
++        description.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
++        description.Alignment          = alignment;
++        description.Width              = width;
++        description.Height             = 1;
++        description.DepthOrArraySize   = 1;
++        description.MipLevels          = 1;
++        description.Format             = DXGI_FORMAT_UNKNOWN;
++        description.SampleDesc.Count   = 1;
++        description.SampleDesc.Quality = 0;
++        description.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++        description.Flags              = flags;
++        return description;
++    }
++};
++
++struct CD3DX12_RESOURCE_BARRIER : public D3D12_RESOURCE_BARRIER
++{
++    static CD3DX12_RESOURCE_BARRIER Transition(ID3D12Resource*               resource,
++                                               D3D12_RESOURCE_STATES         stateBefore,
++                                               D3D12_RESOURCE_STATES         stateAfter,
++                                               UINT                          subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
++                                               D3D12_RESOURCE_BARRIER_FLAGS  flags       = D3D12_RESOURCE_BARRIER_FLAG_NONE)
++    {
++        CD3DX12_RESOURCE_BARRIER  result{};
++        D3D12_RESOURCE_BARRIER&   barrier = result;
++        barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
++        barrier.Flags                  = flags;
++        barrier.Transition.pResource   = resource;
++        barrier.Transition.StateBefore = stateBefore;
++        barrier.Transition.StateAfter  = stateAfter;
++        barrier.Transition.Subresource = subresource;
++        return result;
++    }
++
++    static CD3DX12_RESOURCE_BARRIER UAV(ID3D12Resource* resource)
++    {
++        CD3DX12_RESOURCE_BARRIER  result{};
++        D3D12_RESOURCE_BARRIER&   barrier = result;
++        barrier.Type          = D3D12_RESOURCE_BARRIER_TYPE_UAV;
++        barrier.Flags         = D3D12_RESOURCE_BARRIER_FLAG_NONE;
++        barrier.UAV.pResource = resource;
++        return result;
++    }
++
++    static CD3DX12_RESOURCE_BARRIER Aliasing(ID3D12Resource* resourceBefore, ID3D12Resource* resourceAfter)
++    {
++        CD3DX12_RESOURCE_BARRIER  result{};
++        D3D12_RESOURCE_BARRIER&   barrier = result;
++        barrier.Type                     = D3D12_RESOURCE_BARRIER_TYPE_ALIASING;
++        barrier.Flags                    = D3D12_RESOURCE_BARRIER_FLAG_NONE;
++        barrier.Aliasing.pResourceBefore = resourceBefore;
++        barrier.Aliasing.pResourceAfter  = resourceAfter;
++        return result;
++    }
++};
++
++#include <cstddef>
++#include <cwchar>
++
++/// Converts a wchar_t string into the UTF-16 the D3D12 ABI expects.
++///
++/// Linux wchar_t is 4-byte UTF-32 while vkd3d-proton's WCHAR is the 2-byte
++/// Windows wire type, so every wide string handed to a D3D12 entry point has
++/// to be narrowed. Only debug names go through here; they are ASCII in
++/// practice, and anything outside the BMP is replaced rather than surrogate
++/// encoded.
++struct FfxDX12Name
++{
++    static const size_t Capacity = 128;
++
++    WCHAR buffer[Capacity];
++
++    explicit FfxDX12Name(const wchar_t* name)
++    {
++        size_t index = 0;
++        if (name != nullptr)
++        {
++            for (; name[index] != L'\0' && index < Capacity - 1; index++)
++            {
++                const unsigned int codePoint = static_cast<unsigned int>(name[index]);
++                buffer[index] = static_cast<WCHAR>(codePoint <= 0xFFFF ? codePoint : 0xFFFD);
++            }
++        }
++        buffer[index] = 0;
++    }
++
++    operator const WCHAR*() const
++    {
++        return buffer;
++    }
++};
++
++/// Narrows a wchar_t string to UTF-8, replacing WideCharToMultiByte.
++inline void ffxWideToUtf8(const wchar_t* source, char* destination, size_t destinationSize)
++{
++    if (destinationSize == 0)
++        return;
++
++    size_t written = 0;
++    if (source != nullptr)
++    {
++        for (size_t index = 0; source[index] != L'\0' && written + 1 < destinationSize; index++)
++        {
++            const unsigned int codePoint = static_cast<unsigned int>(source[index]);
++            destination[written++] = codePoint < 0x80 ? static_cast<char>(codePoint) : '?';
++        }
++    }
++    destination[written] = '\0';
++}
++
++/// Widens a UTF-8 reflection name into an internal wchar_t name field,
++/// replacing MultiByteToWideChar. The destination never leaves the SDK, so
++/// this stays in the platform's own 4-byte wchar_t encoding.
++template <size_t capacity>
++inline void ffxUtf8ToWide(const char* source, wchar_t (&destination)[capacity])
++{
++    size_t written = 0;
++    if (source != nullptr)
++    {
++        for (size_t index = 0; source[index] != '\0' && written + 1 < capacity; index++)
++        {
++            const unsigned char byte = static_cast<unsigned char>(source[index]);
++            // Reflection names are identifiers, so plain ASCII in practice.
++            destination[written++] = byte < 0x80 ? static_cast<wchar_t>(byte) : L'?';
++        }
++    }
++    destination[written] = L'\0';
++}

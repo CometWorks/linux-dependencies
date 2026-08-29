@@ -1,0 +1,145 @@
+diff --git a/Kits/FidelityFX/api/include/ffx_api.h b/Kits/FidelityFX/api/include/ffx_api.h
+index 484ec23..a7228cf 100644
+--- a/Kits/FidelityFX/api/include/ffx_api.h
++++ b/Kits/FidelityFX/api/include/ffx_api.h
+@@ -26,7 +26,13 @@
+ extern "C" {
+ #endif  // #if defined(__cplusplus)
+ 
++// Linux port: the five ffx* entry points are the library's only exports; the
++// rest of the SDK is compiled with -fvisibility=hidden.
++#if defined(__GNUC__)
++#define FFX_API_ENTRY __attribute__((visibility("default")))
++#else
+ #define FFX_API_ENTRY __declspec(dllexport)
++#endif
+ 
+ #include <stdint.h>
+ 
+diff --git a/Kits/FidelityFX/api/internal/ffx_assert.cpp b/Kits/FidelityFX/api/internal/ffx_assert.cpp
+index 25791b9..f45d16d 100644
+--- a/Kits/FidelityFX/api/internal/ffx_assert.cpp
++++ b/Kits/FidelityFX/api/internal/ffx_assert.cpp
+@@ -29,6 +29,8 @@
+ #endif
+ #include <windows.h>  // required for OutputDebugString()
+ #include <stdio.h>    // required for sprintf_s
++#else
++#include <stdio.h>    // required for snprintf() and the stderr fallback
+ #endif                // #ifndef _WIN32
+ 
+ static FfxAssertCallback s_assertCallback;
+@@ -48,7 +50,6 @@ bool ffxAssertReport(const char* file, int32_t line, const char* condition, cons
+         return true;
+     }
+ 
+-#ifdef _WIN32
+     // form the final assertion string and output to the TTY.
+     const size_t bufferSize = snprintf(NULL, 0, "%s(%d): ASSERTION FAILED. %s\n", file, line, message ? message : condition) + 1;
+     char*        tempBuf    = (char*)malloc(bufferSize);
+@@ -64,7 +65,13 @@ bool ffxAssertReport(const char* file, int32_t line, const char* condition, cons
+     }
+ 
+     if (!s_assertCallback) {
++#ifdef _WIN32
+         OutputDebugStringA(tempBuf);
++#else
++        // Linux port: there is no debugger output stream, so report on stderr.
++        fputs(tempBuf, stderr);
++        fflush(stderr);
++#endif
+     } else {
+         s_assertCallback(tempBuf);
+     }
+@@ -72,11 +79,5 @@ bool ffxAssertReport(const char* file, int32_t line, const char* condition, cons
+     // free the buffer.
+     free(tempBuf);
+ 
+-#else
+-    FFX_UNUSED(line);
+-    FFX_UNUSED(condition);
+-    FFX_UNUSED(message);
+-#endif
+-
+     return true;
+ }
+diff --git a/Kits/FidelityFX/api/internal/ffx_internal_types.h b/Kits/FidelityFX/api/internal/ffx_internal_types.h
+index 8543915..7925297 100644
+--- a/Kits/FidelityFX/api/internal/ffx_internal_types.h
++++ b/Kits/FidelityFX/api/internal/ffx_internal_types.h
+@@ -79,7 +79,16 @@
+ #define FFX_API __declspec(dllexport)
+ #endif // #if defined (FFX_GCC)
+ 
++// Linux port: every fixed-size name field inside the private effect contexts
++// is wchar_t[], and Linux wchar_t is 4 bytes rather than the 2 bytes upstream
++// budgeted for, which pushes FfxFsr3UpscalerContext_Private (819 KB) past the
++// 512 KB the upstream size reserves. Doubling the reservation keeps the
++// FFX_STATIC_ASSERT in fsr3upscalerCreate satisfied with room to spare.
++#if defined(__GNUC__) && !defined(_WIN32)
++#define FFX_SDK_DEFAULT_CONTEXT_SIZE (1024 * 256)
++#else
+ #define FFX_SDK_DEFAULT_CONTEXT_SIZE (1024 * 128)
++#endif
+ 
+ /// Maximum supported number of simultaneously bound SRVs.
+ ///
+diff --git a/Kits/FidelityFX/api/internal/ffx_message.cpp b/Kits/FidelityFX/api/internal/ffx_message.cpp
+index eaac527..de3c598 100644
+--- a/Kits/FidelityFX/api/internal/ffx_message.cpp
++++ b/Kits/FidelityFX/api/internal/ffx_message.cpp
+@@ -35,6 +35,9 @@
+ #elif defined(_GAMING_XBOX_XBOXONE)
+ #include <d3d12_x.h>
+ #include <d3dx12_x.h>
++
++#else
++#include <stdio.h>  // required for the stderr fallback
+ #endif // defined(_WINDOWS)
+ 
+ static ffxMessageCallback s_messageCallback;
+@@ -50,7 +53,6 @@ void ffxSetPrintMessageCallback(ffxMessageCallback callback, uint32_t debugLevel
+ 
+ void ffxPrintMessage(uint32_t type, const wchar_t* message)
+ {
+-#if defined(_GAMING_XBOX) || defined(_WINDOWS)
+     uint32_t msgTypeToDebugLevel = type + 1u;
+     if (s_debugLevel >= msgTypeToDebugLevel)
+     {
+@@ -63,16 +65,18 @@ void ffxPrintMessage(uint32_t type, const wchar_t* message)
+             else if (type == FFX_API_MESSAGE_TYPE_WARNING) {
+                 swprintf_s(buffer, 512, L"FSR_API_DEBUG_WARNING: %ls\n", message);
+             }
++#if defined(_GAMING_XBOX) || defined(_WINDOWS)
+             OutputDebugStringW(buffer);
++#else
++            // Linux port: there is no debugger output stream, so report on stderr.
++            fprintf(stderr, "%ls", buffer);
++            fflush(stderr);
++#endif
+         } 
+         else {
+             s_messageCallback(type, message);
+         }
+     }
+-    
+-#else
+-    FFX_UNUSED(type);
+-    FFX_UNUSED(message);
+-#endif // defined(_GAMING_XBOX) || defined(_WINDOWS)
++
+     return;
+ }
+diff --git a/Kits/FidelityFX/upscalers/fsr3/internal/ffx_provider_fsr3upscale.cpp b/Kits/FidelityFX/upscalers/fsr3/internal/ffx_provider_fsr3upscale.cpp
+index df59908..4b1f755 100644
+--- a/Kits/FidelityFX/upscalers/fsr3/internal/ffx_provider_fsr3upscale.cpp
++++ b/Kits/FidelityFX/upscalers/fsr3/internal/ffx_provider_fsr3upscale.cpp
+@@ -61,7 +61,7 @@ bool ffxProvider_FSR3Upscale::CanProvide(uint64_t type) const
+ #define MAKE_VERSION_STRING(major, minor, patch) STRINGIFY major "." STRINGIFY minor "." STRINGIFY patch
+ 
+ ffxProvider_FSR3Upscale::ffxProvider_FSR3Upscale()
+-    : ffxProvider(0xF5A5'CA1Eui64 << 32 | (FFX_SDK_MAKE_VERSION(FFX_FSR3UPSCALER_VERSION_MAJOR, FFX_FSR3UPSCALER_VERSION_MINOR, FFX_FSR3UPSCALER_VERSION_PATCH) & 0xFFFF'FFFF),
++    : ffxProvider(0xF5A5'CA1EULL << 32 | (FFX_SDK_MAKE_VERSION(FFX_FSR3UPSCALER_VERSION_MAJOR, FFX_FSR3UPSCALER_VERSION_MINOR, FFX_FSR3UPSCALER_VERSION_PATCH) & 0xFFFF'FFFF),
+         FFX_API_EFFECT_ID_UPSCALE,
+         MAKE_VERSION_STRING(FFX_FSR3UPSCALER_VERSION_MAJOR, FFX_FSR3UPSCALER_VERSION_MINOR, FFX_FSR3UPSCALER_VERSION_PATCH))
+ {

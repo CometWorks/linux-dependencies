@@ -103,12 +103,17 @@ libvkd3d-proton-d3d12.so      patched, see Patches/vkd3d-proton/ (SE2 only)
 libvkd3d-proton-d3d12core.so  patched (SE2 only)
 libdxcompiler.so              DirectX Shader Compiler v1.9.2607, built from
                                source with Patches/dxc/ (SE2 only)
+libamd_fidelityfx_loader_dx12.so
+                              AMD FidelityFX FSR 3.1.5 upscaler, built from
+                               source with Patches/fidelityfx/ (SE2 only)
 libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
 libfmodstudio.so              FMOD Studio API runtime (unmodified vendor blob)
 LICENSES/DXC-BUNDLED-LICENSES.txt
 LICENSES/DXC-LICENSE.txt
 LICENSES/DXC-README.txt
 LICENSES/DXVK-LICENSE.txt
+LICENSES/FidelityFX-LICENSE.txt
+LICENSES/FidelityFX-README.txt
 LICENSES/FMOD-EULA.txt
 LICENSES/FMOD-NOTICE.txt
 LICENSES/README.txt
@@ -128,7 +133,10 @@ it rather than sourcing it elsewhere; see
 
 **DXC links against nothing exotic.** `libdxcompiler.so` resolves only to
 glibc, `libstdc++`, `libgcc_s` and `libm`, the same floor as the rest of the
-archive.
+archive. The same holds for `libamd_fidelityfx_loader_dx12.so`, which has no
+`NEEDED` entry on any sibling: it reaches
+`libvkd3d-proton-d3d12.so` for one export (`D3D12SerializeRootSignature`)
+through `dlopen`, preferring the instance the caller already loaded.
 
 The SDL3 SONAME note from the SE1 section applies here too: the SE2 port must
 load `libSDL3.so` from the bundle before DXVK initialises.

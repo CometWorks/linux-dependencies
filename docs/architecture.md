@@ -35,6 +35,7 @@ for the PE-loader shims.
 | `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | SE2 | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series |
 | `libSDL3.so` | both | SDL3 3.4.12, built once from the upstream release tag; DXVK compiles against its headers and dlopens it at runtime |
 | `libdxcompiler.so` | SE2 | DirectX Shader Compiler at tag `v1.9.2607` + the `Patches/dxc/` ABI compatibility patch, built from source rather than taken from Microsoft's binary release |
+| `libamd_fidelityfx_loader_dx12.so` | SE2 | AMD FidelityFX SDK v2.3.0 (FSR 3.1.5 upscaler) + the `Patches/fidelityfx/` Linux port, with its shaders compiled during the build |
 | `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
 | `Steamworks.NET.dll` | Steam | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
@@ -51,8 +52,8 @@ Three policies shape the archive split:
   DXVK binaries were compiled against keeps the pair a matched set instead of
   depending on whatever the host distribution has.
 * **Everything new with the SE2 port ships only in the SE2 archive.**
-  vkd3d-proton, DXC and FMOD go to `se2-dependencies.tar.gz` alone,
-  so SE1 consumers never download or ship libraries they cannot use.
+  vkd3d-proton, DXC, FidelityFX and FMOD go to `se2-dependencies.tar.gz`
+  alone, so SE1 consumers never download or ship libraries they cannot use.
 * **ABI fixes live in the dependency source.** DXC's Windows-string
   conversions are applied from `Patches/dxc/` before the compiler is built,
   avoiding a separately version-coupled bridge library.
