@@ -78,6 +78,45 @@ together, since the script fails if the tag does not resolve to the SHA.
 Editing the DXC patch needs no version bump: the patch-series hash is part of
 `build/dxc.stamp`, so the next build rebuilds DXC automatically.
 
+## Bumping the FidelityFX SDK
+
+`Scripts/build_fidelityfx.sh` pins two tags of the same repository:
+`FIDELITYFX_TAG`/`FIDELITYFX_COMMIT` for the SDK and
+`FFX_SC_TAG`/`FFX_SC_COMMIT` for the shader permutation compiler. Set each tag
+and SHA together; the script fails if a tag does not resolve to its pinned
+SHA.
+
+1. Check what the game asks for before bumping the SDK. `VRage.Render12`'s
+   `FSR4_1Context` hard-codes the `ffxApiHeader` struct type IDs and the
+   layout of `ffxCreateContextDescUpscale` / `ffxDispatchDescUpscale`; a
+   release that changes either breaks the ABI silently, in a way only a
+   running game shows.
+2. Re-check the licence. This build compiles only files named in the
+   exception list of the SDK's own `docs/license.md`; anything outside that
+   list carries AMD's default binary-redistribution terms instead of MIT. A
+   new release can move files between the two.
+3. Rebase `Patches/fidelityfx/sdk/` and rebuild. The DX12 backend patch is
+   the one most likely to conflict.
+4. Leave `FFX_SC_TAG` at `v1.1.4` unless upstream publishes the shader
+   compiler's source again — the 2.x releases ship it as a Windows binary
+   only. If a new SDK changes the generated permutation header format (as
+   2.x did by adding `entryName`), that is a change to
+   `Patches/fidelityfx/ffx-sc/`.
+5. Re-transcribe `upscalers/fsr3/dx12/BuildFSR3UpscalerShaders.bat` into the
+   shader generation block of `Scripts/build_fidelityfx.sh` if its define sets
+   or shader models changed.
+6. Refresh `Licenses/se2/FidelityFX-README.txt` (it names the tag and commit)
+   and `Licenses/se2/FidelityFX-LICENSE.txt` if the SDK's licence text
+   changed.
+7. Smoke-test in-game: the log line `FSR upscaler provider selected: 3.1.5`
+   plus a rendered frame. A provider that fails to create takes the render
+   thread with it.
+
+The host DXC pin is *not* configured here — it is read out of
+`Scripts/build_dxc.sh`, so bumping DXC bumps both. That is deliberate: the
+shader compiler has to match the compiler the game's own shaders are built
+with.
+
 ## Changing a patch series
 
 Add, edit or remove `Patches/<dep>/NNNN-*.patch` files; each series' hash is
@@ -87,7 +126,9 @@ once, copied), so a DXVK patch change affects SE1 and SE2 consumers alike —
 test accordingly; vkd3d-proton ships in the SE2 archive only. For every
 patch, record in the series' README.md what it fixes and where it came from.
 Patches are applied with `git apply` in byte-wise filename order. DXC patches
-ship in the SE2 archive only.
+ship in the SE2 archive only. `Patches/fidelityfx/` is the one series with
+subdirectories — `sdk/` and `ffx-sc/`, applied to two different checkouts —
+but its hash covers both, so either one invalidates the cache.
 
 ## Bumping SDL3
 

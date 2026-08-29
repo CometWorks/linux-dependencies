@@ -1,0 +1,36 @@
+AMD FidelityFX SDK — license
+============================
+
+libamd_fidelityfx_loader_dx12.so is compiled from the source files under
+Kits/FidelityFX/api/, Kits/FidelityFX/backend/dx12/ and
+Kits/FidelityFX/upscalers/ of the AMD FSR SDK (FidelityFX SDK) v2.3.0. Every
+one of those files is named in the exception list of the SDK's own
+docs/license.md and is therefore covered by the MIT-style license reproduced
+below, rather than by the SDK's default binary-redistribution license.
+
+    Copyright (C) Advanced Micro Devices, Inc.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+The same license covers the FidelityFX_SC shader permutation compiler
+(FidelityFX SDK v1.1.4, sdk/tools/ffx_shader_compiler/), which this build ports
+to Linux and runs as a host tool. That tool is not part of this archive.
+
+AMD FidelityFX, FidelityFX Super Resolution and FSR are trademarks of
+Advanced Micro Devices, Inc.

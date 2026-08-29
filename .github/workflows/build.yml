@@ -1,24 +1,30 @@
 name: Build
 
 # Builds the Space Engineers Linux binary dependencies (FFmpeg, SDL3, DXVK
-# Native, vkd3d-proton, the DirectX Shader Compiler, OpenAL Soft,
-# Steamworks.NET) and publishes them, together with the committed vendor
+# Native, vkd3d-proton, the DirectX Shader Compiler, AMD FidelityFX, OpenAL
+# Soft, Steamworks.NET) and publishes them, together with the committed vendor
 # blobs and the third-party licence texts, as three tar.gz release assets:
 #
 #   * se1-dependencies.tar.gz    Space Engineers 1 — consumed by Pulsar for
 #                                Linux and Magnetar.
 #   * se2-dependencies.tar.gz    Space Engineers 2 — the same patched DXVK
 #                                build plus vkd3d-proton, the DirectX Shader
-#                                Compiler with its SE2 ABI patch, and the FMOD
+#                                Compiler with its SE2 ABI patch, the AMD
+#                                FidelityFX FSR 3.1.5 upscaler, and the FMOD
 #                                runtime.
 #   * steam-dependencies.tar.gz  Steamworks.NET.dll + libsteam_api.so,
 #                                consumed alongside either of the above.
 #
 # DXVK and SDL3 are built once; the identical binaries ship in both game
-# archives. vkd3d-proton and DXC are SE2-only.
+# archives. vkd3d-proton, DXC and FidelityFX are SE2-only.
 #
-# Wall-clock on a cold run is about 31 minutes, of which the DirectX Shader
-# Compiler is roughly 19 -- more than everything else put together.
+# Wall-clock on a cold run is about 50 minutes, of which the DirectX Shader
+# Compiler is roughly 19 -- twice, because Scripts/build_fidelityfx.sh needs a
+# second, STOCK (unpatched) DXC to run AMD's shader compiler against: the
+# shipped libdxcompiler.so carries the SE2 2-byte-WCHAR ABI patch and cannot
+# be called by a normal 4-byte-wchar_t host tool. That host build is cached
+# under its own key ("dxc-host" below), so it is paid for only when the DXC
+# pin itself moves. Everything else in the FidelityFX step takes seconds.
 # Scripts/build_dxc.sh deletes its cmake build tree once the library is staged,
 # so the peak disk footprint stays within the runner's 14 GB.
 #
@@ -104,6 +110,18 @@ jobs:
       CACHE_PATHS_DXC: |
         build/dxc.stamp
         build/Libraries-SE2/libdxcompiler.so
+      # The host DXC is not shipped: it is the compiler AMD's shader
+      # permutation tool links against. Only the library and the headers that
+      # tool is built against are cached, which is what build_fidelityfx.sh
+      # checks for before deciding to rebuild.
+      CACHE_PATHS_DXC_HOST: |
+        build/dxc-host.stamp
+        build/dxc-host/build/lib/libdxcompiler.so
+        build/dxc-host/include
+        build/dxc-host/external/DirectX-Headers/include
+      CACHE_PATHS_FIDELITYFX: |
+        build/fidelityfx.stamp
+        build/Libraries-SE2/libamd_fidelityfx_loader_dx12.so
       CACHE_PATHS_OPENAL: |
         build/openal.stamp
         build/Libraries/libopenal.so
@@ -171,13 +189,22 @@ jobs:
           set -euo pipefail
           toolchain="gcc$(gcc -dumpfullversion)-glibc$(ldd --version | head -1 | awk '{print $NF}')"
           echo "Toolchain: $toolchain"
-          for dep in ffmpeg sdl3 dxvk vkd3d-proton dxc openal steamworks-net; do
+          for dep in ffmpeg sdl3 dxvk vkd3d-proton dxc fidelityfx openal steamworks-net; do
             stamp="$(bash "Scripts/build_${dep//-/_}.sh" --print-stamp)"
             digest="$(printf '%s' "$stamp" | sha256sum | cut -c1-32)"
             key="$dep-ubuntu-24.04-$toolchain-$digest"
             echo "${dep//-/_}=$key" >> "$GITHUB_OUTPUT"
             printf '%-16s %s\n         stamp: %s\n' "$dep" "$key" "$stamp"
           done
+          # The host DXC has no build script of its own; it is keyed on the DXC
+          # commit alone. Deliberately not on build_dxc.sh's stamp, which also
+          # covers Patches/dxc/ -- those patches are not applied to this build,
+          # so editing them must not cost another 19 minutes here.
+          dxc_commit="$(sed -n 's/^DXC_COMMIT="${DXC_COMMIT:-\(.*\)}"$/\1/p' Scripts/build_dxc.sh)"
+          digest="$(printf '%s' "$dxc_commit" | sha256sum | cut -c1-32)"
+          echo "dxc_host=dxc-host-ubuntu-24.04-$toolchain-$digest" >> "$GITHUB_OUTPUT"
+          printf '%-16s %s\n         commit: %s\n' "dxc-host" \
+            "dxc-host-ubuntu-24.04-$toolchain-$digest" "$dxc_commit"
 
       - name: Restore FFmpeg
         id: cache-ffmpeg
@@ -218,6 +245,20 @@ jobs:
         with:
           key: ${{ steps.keys.outputs.dxc }}
           path: ${{ env.CACHE_PATHS_DXC }}
+
+      - name: Restore host DXC (FidelityFX shader compilation)
+        id: cache-dxc-host
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.dxc_host }}
+          path: ${{ env.CACHE_PATHS_DXC_HOST }}
+
+      - name: Restore FidelityFX
+        id: cache-fidelityfx
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.keys.outputs.fidelityfx }}
+          path: ${{ env.CACHE_PATHS_FIDELITYFX }}
 
       - name: Restore OpenAL Soft
         id: cache-openal
@@ -278,6 +319,20 @@ jobs:
         with:
           key: ${{ steps.keys.outputs.dxc }}
           path: ${{ env.CACHE_PATHS_DXC }}
+
+      - name: Save host DXC (FidelityFX shader compilation)
+        if: ${{ !cancelled() && steps.cache-dxc-host.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.dxc_host }}
+          path: ${{ env.CACHE_PATHS_DXC_HOST }}
+
+      - name: Save FidelityFX
+        if: ${{ !cancelled() && steps.cache-fidelityfx.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.keys.outputs.fidelityfx }}
+          path: ${{ env.CACHE_PATHS_FIDELITYFX }}
 
       - name: Save OpenAL Soft
         if: ${{ !cancelled() && steps.cache-openal.outputs.cache-hit != 'true' }}

@@ -144,7 +144,8 @@ exactly which path each file came from.
 The Space Engineers 2 Linux port consumes `se2-dependencies.tar.gz`,
 which carries the patched DXVK build and `libSDL3.so` (both byte-identical
 to the SE1 archive's copies), the patched vkd3d-proton build, the patched
-DirectX Shader Compiler, and the FMOD Engine runtime — see
+DirectX Shader Compiler, the AMD FidelityFX FSR 3.1.5 upscaler, and the FMOD
+Engine runtime — see
 [release-archive.md](release-archive.md#layout-se2-archive) for the exact
 contents. It follows the same fetch pattern (same release, second asset name)
 and the same rules: extract with symlink-preserving `tar`, keep `LICENSES/`
@@ -152,7 +153,7 @@ next to the binaries. The SE2 native wrappers (`libVRage.*.Native.so`) come
 from the linux-native-wrappers release, fetched separately — the same split
 as for SE1.
 
-Three SE2-specific notes:
+Four SE2-specific notes:
 
 * The FMOD blobs ship **unmodified** (no patchelf) under the bare names, so
   `libfmodstudio.so`'s internal `NEEDED` entry still references the upstream
@@ -162,6 +163,12 @@ Three SE2-specific notes:
 * `libSDL3.so` needs the same preload as in SE1: load it from the bundle
   before DXVK initialises, so DXVK's `dlopen("libSDL3.so.0")` resolves to the
   bundled copy by SONAME rather than searching the host.
+* `libamd_fidelityfx_loader_dx12.so` is what the game's renderer P/Invokes as
+  `amd_fidelityfx_loader_dx12.dll` when FSR upscaling is selected. It is
+  optional in the sense that a consumer can gate the setting on its presence
+  — the game itself does not survive its absence — and it needs no preload:
+  it reaches `libvkd3d-proton-d3d12.so` for one export through `dlopen`,
+  preferring the instance the process already has.
 * The asset exists only from the release that introduced it onward; a fetch
   script should fail with a clear message when the asset is missing from an
   older pinned tag.

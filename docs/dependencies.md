@@ -15,6 +15,7 @@ are shared byte-identically between the two game archives.
 | SDL3 | both | tag `release-3.4.12` | zlib | `Scripts/build_sdl3.sh` |
 | vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
 | DirectX Shader Compiler + `Patches/dxc/` series | SE2 | tag `v1.9.2607` (commit `0d3ee6b5…`) + patch-series hash | NCSA/LLVM Release License | `Scripts/build_dxc.sh` |
+| AMD FidelityFX SDK + `Patches/fidelityfx/` series | SE2 | tag `v2.3.0` (commit `60f4ea81…`), shader compiler tag `v1.1.4` + patch-series hash | MIT | `Scripts/build_fidelityfx.sh` |
 | OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
 | Steamworks.NET | Steam | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
@@ -25,8 +26,9 @@ SDL3 has a double role: it supplies the headers DXVK compiles against *and*
 ships as `libSDL3.so`, because DXVK's window-system integration dlopens it at
 runtime. See [SDL3](#sdl3-3412).
 
-The DXC patch is maintained in this repository; every shipped binary is built
-from upstream or vendor source rather than first-party source.
+The DXC and FidelityFX patches are maintained in this repository; every
+shipped binary is built from upstream or vendor source rather than
+first-party source.
 
 ---
 
@@ -349,6 +351,120 @@ suffix records the applied patch series. The
 corresponding runtime string is *not* checkable with `strings` on the
 finished `.so`: those literals end up in an unterminated 16-byte merged
 constant pool where the tag reads back truncated as `3.7-v1.9.26`.
+
+---
+
+## AMD FidelityFX FSR 3.1.5 (SE2 archive only)
+
+**Produces:** `libamd_fidelityfx_loader_dx12.so`, staged straight into
+`build/Libraries-SE2/`, with the
+[Patches/fidelityfx/](../Patches/fidelityfx/) series applied.
+
+**Source:** `https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git`
+at tag `v2.3.0` (commit `60f4ea81909200d8542eca14dccb2628b763a9a3`), plus a
+second checkout of the same repository at tag `v1.1.4` (commit
+`c6efa6bf7f20…`) for the shader compiler. Both are sparse clones — the full
+repository is several GB of samples and media, of which this build needs
+about 190 MB — cached under `build/fidelityfx/` and `build/ffx-sc-src/`.
+
+**Consumed by:** the Space Engineers 2 client. When the graphics Quality
+setting selects FSR upscaling, `VRage.Render12`'s `FSR4_1Context` P/Invokes
+five entry points — `ffxCreateContext`, `ffxDestroyContext`, `ffxConfigure`,
+`ffxQuery` and `ffxDispatch` — from `amd_fidelityfx_loader_dx12.dll`. That is
+AMD's flat `ffx_api` ABI: plain C functions taking `ffxApiHeader` struct
+chains, with the renderer's own `ID3D12Device*` and `ID3D12Resource*` pointers
+passed straight through. No Windows ABI crosses the boundary, so a native
+SysV `.so` exporting those five symbols is a drop-in replacement.
+
+### What is in the library
+
+The `ffx_api` dispatcher, the DirectX 12 backend and the FSR 3.1.5 upscaler
+provider are linked into a single object. AMD's Windows build discovers
+providers by loading separate upscaler DLLs; linking the one provider that
+has source sidesteps that machinery, so nothing is `dlopen`ed at run time
+except the D3D12 library (see below).
+
+FSR 3.1.5 is the only upscaler included. FSR 4.x ships as a prebuilt, signed
+Windows DLL with no source, and the driver-side ("external") provider lives
+behind `FFX_BACKEND_DX12` in AMD's closed `amdinternal` tree — neither can be
+part of a from-source build. The plugin side of the port forces the game's
+`ForceUseFSR_3_1` setting on to match, which makes the game's own
+"FSR upscaler provider selected: …" log line say `3.1.5`.
+
+`GetProvider()`/`GetProviderVersions()` are declared in the SDK but never
+defined there: each of AMD's shipping loader DLLs supplies its own definition
+naming the providers it was built with. The patch series adds that file.
+
+### How it is built
+
+The DX12 backend is compiled against **vkd3d-proton's installed headers**
+(`build/vkd3d-proton-out/include/vkd3d-proton/`), so the `ID3D12Device` and
+`ID3D12Resource` vtables it compiles against are by construction the ones the
+game passes in. `build_fidelityfx.sh` therefore runs after
+`build_vkd3d_proton.sh` in the pipeline, and invokes it itself if those
+headers are missing. A handful of generated forwarding headers map the SDK's
+`<d3d12.h>`, `<dxgi.h>` and friends onto vkd3d-proton's `vkd3d_`-prefixed
+names.
+
+Everything is compiled with `-fvisibility=hidden`; only the five `ffx_api`
+entry points carry default visibility, and the build asserts that all five are
+exported before staging. The library is linked with `-Wl,--no-undefined`, so a
+missing symbol is a link error here rather than a `dlopen` failure inside the
+game, and gets `DT_RUNPATH=$ORIGIN` like the other payloads.
+
+### Shaders
+
+The ten FSR 3.1 compute passes are compiled to DXIL during the build, in four
+variants each (wave32/wave64 × fp32/fp16), each expanding six boolean shader
+options into 64 permutations. The compiler is AMD's own FidelityFX_SC, which
+generates the permutation headers the upscaler's shader blob tables are built
+from. The 2.x releases ship it only as a prebuilt Windows `.exe`, so the
+build takes it from the last release that published its source (`v1.1.4`) and
+ports it — that is what the second checkout is for. The permutation
+expansion, define sets and shader models are a transcription of the SDK's own
+`BuildFSR3UpscalerShaders.bat`.
+
+FidelityFX_SC drives DXC in-process through `DxcCreateInstance`, and it must
+be a **stock** DXC: the shipped `libdxcompiler.so` carries the SE2 2-byte
+`WCHAR` ABI patch and is deliberately incompatible with a normal
+4-byte-`wchar_t` caller. The build therefore keeps a second, unpatched DXC
+build tree (`build/dxc-host/`) at the same pin as `Scripts/build_dxc.sh`,
+read out of that script rather than duplicated. It is cached under its own
+stamp (`build/dxc-host.stamp`), is not shipped, and is the only expensive part
+of this step — everything after it takes seconds.
+
+The generated DXIL is unsigned, for the same reason
+[`libdxil.so` is not shipped](#why-libdxilso-is-not-shipped): vkd3d-proton
+does not validate DXIL signatures.
+
+### The Linux port
+
+The patch series is documented file by file in
+[`Patches/fidelityfx/README.md`](../Patches/fidelityfx/README.md). The
+substantive items are MSVC-only CRT calls (`sprintf_s`, `wcscpy_s` and
+friends), the AGS and PIX tracing paths (both `LoadLibraryW` Windows-only
+DLLs), Microsoft's MSVC-only `d3dx12.h` helpers, Win32 diagnostics, and two
+consequences of Linux `wchar_t` being 4 bytes rather than 2: every `SetName`
+call has to narrow to the D3D12 ABI's 2-byte `WCHAR`, and the private effect
+contexts outgrow the SDK's own size reservation.
+
+`D3D12SerializeRootSignature` was resolved through
+`GetModuleHandleW(L"D3D12.dll")`; it is now `dlopen`/`dlsym` against
+`libvkd3d-proton-d3d12.so`, which exports it. `RTLD_NOLOAD` is tried first, so
+the reference is to the caller's already-loaded instance rather than a second
+private copy.
+
+### Post-build verification
+
+The script asserts that `ffxCreateContext`, `ffxDestroyContext`,
+`ffxConfigure`, `ffxQuery` and `ffxDispatch` are all exported by the built
+library before staging it. A missing entry point there would otherwise
+surface as a `DllNotFoundException` on the game's render thread.
+
+Every source file compiled into the library is named in the exception list of
+the SDK's own `docs/license.md` and is therefore MIT-licensed, not covered by
+the SDK's default binary-redistribution terms. The SE2 archive carries
+`LICENSES/FidelityFX-LICENSE.txt` and `LICENSES/FidelityFX-README.txt`.
 
 ---
 

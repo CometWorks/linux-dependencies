@@ -1,0 +1,439 @@
+diff --git a/Kits/FidelityFX/backend/dx12/ffx_dx12.cpp b/Kits/FidelityFX/backend/dx12/ffx_dx12.cpp
+index 83bf8e9..111c43c 100644
+--- a/Kits/FidelityFX/backend/dx12/ffx_dx12.cpp
++++ b/Kits/FidelityFX/backend/dx12/ffx_dx12.cpp
+@@ -25,10 +25,12 @@
+ #include "../../api/internal/ffx_assert.h"
+ 
+ #include "ffx_dx12.h"
+-#include "d3dx12.h"
++// Linux port: d3dx12.h is MSVC-only; ffx_dx12_helpers.h supplies the handful of
++// CD3DX12_* helpers this file actually uses. The <codecvt> and <memoryapi.h>
++// includes are vestigial upstream -- nothing in this file uses either.
++#include "ffx_dx12_helpers.h"
+ 
+-#include <codecvt>  // convert string to wstring
+-#include <memoryapi.h> // for VirtualAlloc
++#include <dlfcn.h>
+ #include <mutex>
+ #include <tuple> // std::ignore
+ #include <limits> // std::numeric_limits
+@@ -39,12 +41,15 @@
+ #define FFX_MAX_TIMESTAMPS (16)
+ 
+ // Disable this to remove the dll load of AMD AGS tracing
+-#define ENABLE_AGS 1
++// Linux port: amd_ags_x64.dll is Windows-only, so this is off and every
++// `#if ENABLE_AGS` below became `#if ENABLE_AGS`.
++#define ENABLE_AGS 0
+ 
+ // Disable this to remove the dll load of PIX and PIX tracing
+-#define ENABLE_PIX_CAPTURES 1
++// Linux port: WinPixEventRuntime.dll (and <pix3.h>) are Windows-only.
++#define ENABLE_PIX_CAPTURES 0
+ 
+-#if defined(ENABLE_AGS)
++#if ENABLE_AGS
+ 
+ #ifdef __clang__
+ #pragma clang diagnostic ignored "-Wunused-function"
+@@ -64,9 +69,9 @@ AgsBeginEventOnCommandList agsBeginEventOnCommandList = {};
+ AgsEndEventOnCommandList   agsEndEventOnCommandList = {};
+ AgsSetMarkerOnCommandList  agsSetMarkerOnCommandList = {};
+ 
+-#endif // #if defined(ENABLE_AGS)
++#endif // #if ENABLE_AGS
+ 
+-#if defined(ENABLE_PIX_CAPTURES)
++#if ENABLE_PIX_CAPTURES
+ // PIX instrumentation is only enabled if one of the preprocessor symbols USE_PIX, DBG, _DEBUG, PROFILE, or PROFILE_BUILD is defined.
+ // ref: https://devblogs.microsoft.com/pix/winpixeventruntime/
+ #ifndef USE_PIX
+@@ -90,7 +95,7 @@ PixEndEventOnCommandList   pixEndEventOnCommandList = {};
+ PixSetMarkerOnCommandList  pixSetMarkerOnCommandList = {};
+ static const UINT32 s_pixColor = PIX_COLOR(255, 36, 36);
+ 
+-#endif // #if defined(ENABLE_PIX_CAPTURES)
++#endif // #if ENABLE_PIX_CAPTURES
+ 
+ // DX12 prototypes for functions in the backend interface
+ FfxVersionNumber GetSDKVersionDX12(FfxInterface* backendInterface);
+@@ -366,7 +371,7 @@ FfxApiResource ffxGetResourceDX12(const ID3D12Resource* dx12Resource,
+ 
+ FfxErrorCode ffxLoadAgsDll(const wchar_t* agsDllPath)
+ {
+-#if defined(ENABLE_AGS)
++#if ENABLE_AGS
+     // Only do this once
+     if (s_AgsDllLoaded)
+         return FFX_OK;
+@@ -392,14 +397,14 @@ FfxErrorCode ffxLoadAgsDll(const wchar_t* agsDllPath)
+ 
+     s_AgsDllLoaded = true;
+ 
+-#endif // #if defined(ENABLE_AGS)
++#endif // #if ENABLE_AGS
+ 
+     return FFX_OK;
+ }
+ 
+ FfxErrorCode ffxLoadPixDll(const wchar_t* pixDllPath)
+ {
+-#if defined(ENABLE_PIX_CAPTURES)
++#if ENABLE_PIX_CAPTURES
+     // Only do this once
+     if (s_PixDllLoaded)
+         return FFX_OK;
+@@ -424,7 +429,7 @@ FfxErrorCode ffxLoadPixDll(const wchar_t* pixDllPath)
+     }
+ 
+     s_PixDllLoaded = true;
+-#endif // #if defined(ENABLE_PIX_CAPTURES)
++#endif // #if ENABLE_PIX_CAPTURES
+ 
+     return FFX_OK;
+ }
+@@ -440,15 +445,11 @@ void TIF(HRESULT result)
+ {
+     if (FAILED(result)) {
+ 
++        // Linux port: FormatMessageW and MessageBoxW are Win32-only, and the
++        // formatted text was unused on Windows too -- report the HRESULT.
+         wchar_t errorMessage[256];
+-        memset(errorMessage, 0, sizeof(errorMessage));
+-        FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, NULL, result, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errorMessage, 255, NULL);
+-        char errA[256];
+-        size_t returnSize;
+-        wcstombs_s(&returnSize, errA, 255, errorMessage, 255);
+-#ifdef _DEBUG
+-        std::ignore = MessageBoxW(NULL, errorMessage, L"Error", MB_OK);
+-#endif
++        swprintf(errorMessage, 256, L"FFXInterface: DX12: call failed with HRESULT 0x%08x", (unsigned int)result);
++        FFX_PRINT_MESSAGE(FFX_API_MESSAGE_TYPE_ERROR, errorMessage);
+         throw 1;
+     }
+ }
+@@ -468,7 +469,7 @@ FfxApiConstantBufferAllocation BackendContext_DX12::FallbackConstantAllocator(vo
+         TIF(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE,
+             &constDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+             IID_PPV_ARGS(&constantBufferResource)));
+-        constantBufferResource->SetName(L"FFX_DX12_DynamicRingBuffer");
++        constantBufferResource->SetName(FfxDX12Name(L"FFX_DX12_DynamicRingBuffer"));
+ 
+         // map it
+         TIF(constantBufferResource->Map(0, nullptr,
+@@ -941,7 +942,7 @@ ID3D12Resource* getDX12ResourcePtr(BackendContext_DX12* backendContext, int32_t
+     return reinterpret_cast<ID3D12Resource*>(backendContext->pResources[resourceIndex].resourcePtr);
+ }
+ 
+-#if defined(ENABLE_AGS)
++#if ENABLE_AGS
+ AGSContext* getAgsContextPtr(BackendContext_DX12* backendContext)
+ {
+     FFX_ASSERT(backendContext != nullptr);
+@@ -964,7 +965,7 @@ AGSContext* getAgsContextPtr(BackendContext_DX12* backendContext)
+ 
+     return nullptr;
+ }
+-#endif // #if defined(ENABLE_AGS)
++#endif // #if ENABLE_AGS
+ 
+ static void BeginEventDX12(BackendContext_DX12* backendContext, FfxUInt32 effectContextId, ID3D12GraphicsCommandList* pCmdList, const char* label)
+ {
+@@ -974,7 +975,7 @@ static void BeginEventDX12(BackendContext_DX12* backendContext, FfxUInt32 effect
+ 
+     if (effectContext.debuggingEnabled)
+     {
+-        #if defined(ENABLE_AGS)
++        #if ENABLE_AGS
+         if (s_AgsDllLoaded)
+         {
+             AGSContext* agsContext = getAgsContextPtr(backendContext);
+@@ -984,14 +985,14 @@ static void BeginEventDX12(BackendContext_DX12* backendContext, FfxUInt32 effect
+                 agsBeginEventOnCommandList(agsContext, pCmdList, label);
+             }
+         }
+-        #endif // #if defined(ENABLE_AGS)
++        #endif // #if ENABLE_AGS
+ 
+-        #if defined(ENABLE_PIX_CAPTURES)
++        #if ENABLE_PIX_CAPTURES
+         if (s_PixDllLoaded)
+         {
+             pixBeginEventOnCommandList(pCmdList, s_pixColor, label);
+         }
+-        #endif // #if defined(ENABLE_PIX_CAPTURES)
++        #endif // #if ENABLE_PIX_CAPTURES
+     }
+ }
+ 
+@@ -1004,9 +1005,9 @@ static void BeginEventDX12(BackendContext_DX12* backendContext, FfxUInt32 effect
+     if (effectContext.debuggingEnabled)
+     {
+         char strLabel[FFX_RESOURCE_NAME_SIZE];
+-        WideCharToMultiByte(CP_UTF8, 0, label, -1, strLabel, int(std::size(strLabel)), nullptr, nullptr);
++        ffxWideToUtf8(label, strLabel, sizeof(strLabel));
+ 
+-        #if defined(ENABLE_AGS)
++        #if ENABLE_AGS
+         if (s_AgsDllLoaded)
+         {
+             AGSContext* agsContext = getAgsContextPtr(backendContext);
+@@ -1016,14 +1017,14 @@ static void BeginEventDX12(BackendContext_DX12* backendContext, FfxUInt32 effect
+                 agsBeginEventOnCommandList(agsContext, pCmdList, strLabel);
+             }
+         }
+-        #endif // #if defined(ENABLE_AGS)
++        #endif // #if ENABLE_AGS
+ 
+-        #if defined(ENABLE_PIX_CAPTURES)
++        #if ENABLE_PIX_CAPTURES
+         if (s_PixDllLoaded)
+         {
+             pixBeginEventOnCommandList(pCmdList, s_pixColor, strLabel);
+         }
+-        #endif // #if defined(ENABLE_PIX_CAPTURES)
++        #endif // #if ENABLE_PIX_CAPTURES
+     }
+ }
+ 
+@@ -1035,7 +1036,7 @@ static void EndEventDX12(BackendContext_DX12* backendContext, FfxUInt32 effectCo
+ 
+     if (effectContext.debuggingEnabled)
+     {
+-        #if defined(ENABLE_AGS)
++        #if ENABLE_AGS
+         if (s_AgsDllLoaded)
+         {
+             AGSContext* agsContext = getAgsContextPtr(backendContext);
+@@ -1045,14 +1046,14 @@ static void EndEventDX12(BackendContext_DX12* backendContext, FfxUInt32 effectCo
+                 agsEndEventOnCommandList(agsContext, pCmdList);
+             }
+         }
+-        #endif // #if defined(ENABLE_AGS)
++        #endif // #if ENABLE_AGS
+ 
+-        #if defined(ENABLE_PIX_CAPTURES)
++        #if ENABLE_PIX_CAPTURES
+         if (s_PixDllLoaded)
+         {
+             pixEndEventOnCommandList(pCmdList);
+         }
+-        #endif // #if defined(ENABLE_PIX_CAPTURES)
++        #endif // #if ENABLE_PIX_CAPTURES
+     }
+ }
+ 
+@@ -1064,7 +1065,7 @@ static void InsertMarkerDX12(BackendContext_DX12* backendContext, FfxUInt32 effe
+ 
+     if (effectContext.debuggingEnabled)
+     {
+-        #if defined(ENABLE_AGS)
++        #if ENABLE_AGS
+         if (s_AgsDllLoaded)
+         {
+             AGSContext* agsContext = getAgsContextPtr(backendContext);
+@@ -1074,14 +1075,14 @@ static void InsertMarkerDX12(BackendContext_DX12* backendContext, FfxUInt32 effe
+                 agsSetMarkerOnCommandList(agsContext, pCmdList, label);
+             }
+         }
+-        #endif // #if defined(ENABLE_AGS)
++        #endif // #if ENABLE_AGS
+ 
+-        #if defined(ENABLE_PIX_CAPTURES)
++        #if ENABLE_PIX_CAPTURES
+         if (s_PixDllLoaded)
+         {
+             pixSetMarkerOnCommandList(pCmdList, s_pixColor, label);
+         }
+-        #endif // #if defined(ENABLE_PIX_CAPTURES)
++        #endif // #if ENABLE_PIX_CAPTURES
+     }
+ }
+ 
+@@ -1094,9 +1095,9 @@ static void InsertMarkerDX12(BackendContext_DX12* backendContext, FfxUInt32 effe
+     if (effectContext.debuggingEnabled)
+     {
+         char strLabel[FFX_RESOURCE_NAME_SIZE];
+-        WideCharToMultiByte(CP_UTF8, 0, label, -1, strLabel, int(std::size(strLabel)), nullptr, nullptr);
++        ffxWideToUtf8(label, strLabel, sizeof(strLabel));
+ 
+-        #if defined(ENABLE_AGS)
++        #if ENABLE_AGS
+         if (s_AgsDllLoaded)
+         {
+             AGSContext* agsContext = getAgsContextPtr(backendContext);
+@@ -1106,14 +1107,14 @@ static void InsertMarkerDX12(BackendContext_DX12* backendContext, FfxUInt32 effe
+                 agsSetMarkerOnCommandList(agsContext, pCmdList, strLabel);
+             }
+         }
+-        #endif // #if defined(ENABLE_AGS)
++        #endif // #if ENABLE_AGS
+ 
+-        #if defined(ENABLE_PIX_CAPTURES)
++        #if ENABLE_PIX_CAPTURES
+         if (s_PixDllLoaded)
+         {
+             pixSetMarkerOnCommandList(pCmdList, s_pixColor, strLabel);
+         }
+-        #endif // #if defined(ENABLE_PIX_CAPTURES)
++        #endif // #if ENABLE_PIX_CAPTURES
+     }
+ }
+ 
+@@ -1378,10 +1379,11 @@ FfxErrorCode CreateBackendContextDX12(FfxInterface* backendInterface, FfxEffect
+         backendContext->timestampCount = 0;
+         backendContext->activeQueryCount = 0;
+ 
+-        // DXGI factory used for memory usage tracking
+-        result = CreateDXGIFactory2(0, IID_PPV_ARGS(&backendContext->dxgiFactory));
+-
+-        FFX_UNUSED(result);
++        // Linux port: DXGI comes from DXVK here, not from the D3D12 library,
++        // and this factory is never used for anything -- it is created and
++        // released again, nothing in between. Skip it rather than take a
++        // dependency on a second translation layer.
++        backendContext->dxgiFactory = nullptr;
+ 
+         D3D12_FEATURE_DATA_D3D12_OPTIONS dx12Options = {};
+ 		dx12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &dx12Options, sizeof(dx12Options));
+@@ -1782,11 +1784,11 @@ FfxErrorCode CreateResourceDX12(
+         dx12Resource->Unmap(0, nullptr);
+         if (createResourceDescription->name != nullptr)
+         {
+-            dx12Resource->SetName(createResourceDescription->name);
++            dx12Resource->SetName(FfxDX12Name(createResourceDescription->name));
+         }
+         else
+         {
+-            dx12Resource->SetName(L"FFX Backend Resource");
++            dx12Resource->SetName(FfxDX12Name(L"FFX Backend Resource"));
+         }
+         backendResource->resourcePtr = dx12Resource;
+ 
+@@ -1832,11 +1834,11 @@ FfxErrorCode CreateResourceDX12(
+ 
+         if (createResourceDescription->name != nullptr)
+         {
+-            dx12Resource->SetName(createResourceDescription->name);
++            dx12Resource->SetName(FfxDX12Name(createResourceDescription->name));
+         }
+         else
+         {
+-            dx12Resource->SetName(L"FFX Backend Resource");
++            dx12Resource->SetName(FfxDX12Name(L"FFX Backend Resource"));
+         }
+         backendResource->resourcePtr = dx12Resource;
+ 
+@@ -3211,15 +3213,26 @@ FfxErrorCode CreatePipelineDX12(
+         ID3DBlob* outBlob = nullptr;
+         ID3DBlob* errorBlob = nullptr;
+ 
+-        //Query D3D12SerializeRootSignature from d3d12.dll handle
+-        typedef HRESULT(__stdcall* D3D12SerializeRootSignatureType)(const D3D12_ROOT_SIGNATURE_DESC*, D3D_ROOT_SIGNATURE_VERSION, ID3DBlob**, ID3DBlob**);
+-
+-        //Do not pass hD3D12 handle to the FreeLibrary function, as GetModuleHandle will not increment refcount
+-        HMODULE d3d12ModuleHandle = GetModuleHandleW(L"D3D12.dll");
++        //Query D3D12SerializeRootSignature from the loaded D3D12 implementation
++        typedef HRESULT(* D3D12SerializeRootSignatureType)(const D3D12_ROOT_SIGNATURE_DESC*, D3D_ROOT_SIGNATURE_VERSION, ID3DBlob**, ID3DBlob**);
++
++        // Linux port: the D3D12 implementation is vkd3d-proton, whose
++        // libvkd3d-proton-d3d12.so exports D3D12SerializeRootSignature. The
++        // caller has it loaded already, so RTLD_NOLOAD takes a reference to
++        // that instance rather than mapping a second, private copy. The
++        // fallbacks cover a caller that loaded it under another name: a
++        // sibling copy (this library is linked with -rpath $ORIGIN), then
++        // whatever exports the symbol in this process.
++        void* d3d12ModuleHandle = dlopen("libvkd3d-proton-d3d12.so", RTLD_LAZY | RTLD_NOLOAD);
++        if (NULL == d3d12ModuleHandle)
++            d3d12ModuleHandle = dlopen("libvkd3d-proton-d3d12.so", RTLD_LAZY);
++        if (NULL == d3d12ModuleHandle)
++            d3d12ModuleHandle = dlopen(NULL, RTLD_LAZY);
+ 
+         if (NULL != d3d12ModuleHandle) {
+ 
+-            D3D12SerializeRootSignatureType dx12SerializeRootSignatureType = (D3D12SerializeRootSignatureType)GetProcAddress(d3d12ModuleHandle, "D3D12SerializeRootSignature");
++            D3D12SerializeRootSignatureType dx12SerializeRootSignatureType = (D3D12SerializeRootSignatureType)dlsym(d3d12ModuleHandle, "D3D12SerializeRootSignature");
++            dlclose(d3d12ModuleHandle);
+ 
+             if (nullptr != dx12SerializeRootSignatureType) {
+                 
+@@ -3292,12 +3305,7 @@ FfxErrorCode CreatePipelineDX12(
+ 
+             outPipeline->srvTextureBindings[bindingIndex].slotIndex  = slotIndex;
+             outPipeline->srvTextureBindings[bindingIndex].arrayIndex = arrayIndex;
+-            MultiByteToWideChar(CP_UTF8,
+-                                0,
+-                                pShaderBlob->boundSRVTextureNames[srvIndex],
+-                                -1,
+-                                outPipeline->srvTextureBindings[bindingIndex].name,
+-                                int(std::size(outPipeline->srvTextureBindings[bindingIndex].name)));
++            ffxUtf8ToWide(pShaderBlob->boundSRVTextureNames[srvIndex], outPipeline->srvTextureBindings[bindingIndex].name);
+         }
+     }
+ 
+@@ -3322,12 +3330,7 @@ FfxErrorCode CreatePipelineDX12(
+ 
+             outPipeline->uavTextureBindings[bindingIndex].slotIndex  = slotIndex;
+             outPipeline->uavTextureBindings[bindingIndex].arrayIndex = arrayIndex;
+-            MultiByteToWideChar(CP_UTF8,
+-                                0,
+-                                pShaderBlob->boundUAVTextureNames[uavIndex],
+-                                -1,
+-                                outPipeline->uavTextureBindings[bindingIndex].name,
+-                                int(std::size(outPipeline->uavTextureBindings[bindingIndex].name)));
++            ffxUtf8ToWide(pShaderBlob->boundUAVTextureNames[uavIndex], outPipeline->uavTextureBindings[bindingIndex].name);
+         }
+     }
+ 
+@@ -3352,12 +3355,7 @@ FfxErrorCode CreatePipelineDX12(
+ 
+             outPipeline->srvBufferBindings[bindingIndex].slotIndex  = slotIndex;
+             outPipeline->srvBufferBindings[bindingIndex].arrayIndex = arrayIndex;
+-            MultiByteToWideChar(CP_UTF8,
+-                                0,
+-                                pShaderBlob->boundSRVBufferNames[srvIndex],
+-                                -1,
+-                                outPipeline->srvBufferBindings[bindingIndex].name,
+-                                int(std::size(outPipeline->srvBufferBindings[bindingIndex].name)));
++            ffxUtf8ToWide(pShaderBlob->boundSRVBufferNames[srvIndex], outPipeline->srvBufferBindings[bindingIndex].name);
+         }
+     }
+ 
+@@ -3382,12 +3380,7 @@ FfxErrorCode CreatePipelineDX12(
+ 
+             outPipeline->uavBufferBindings[bindingIndex].slotIndex  = slotIndex;
+             outPipeline->uavBufferBindings[bindingIndex].arrayIndex = arrayIndex;
+-            MultiByteToWideChar(CP_UTF8,
+-                                0,
+-                                pShaderBlob->boundUAVBufferNames[uavIndex],
+-                                -1,
+-                                outPipeline->uavBufferBindings[bindingIndex].name,
+-                                int(std::size(outPipeline->uavBufferBindings[bindingIndex].name)));
++            ffxUtf8ToWide(pShaderBlob->boundUAVBufferNames[uavIndex], outPipeline->uavBufferBindings[bindingIndex].name);
+         }
+     }
+ 
+@@ -3398,12 +3391,7 @@ FfxErrorCode CreatePipelineDX12(
+     {
+         outPipeline->constantBufferBindings[cbIndex].slotIndex  = pShaderBlob->boundConstantBuffers[cbIndex];
+         outPipeline->constantBufferBindings[cbIndex].arrayIndex = 1;
+-        MultiByteToWideChar(CP_UTF8,
+-                            0,
+-                            pShaderBlob->boundConstantBufferNames[cbIndex],
+-                            -1,
+-                            outPipeline->constantBufferBindings[cbIndex].name,
+-                            int(std::size(outPipeline->constantBufferBindings[cbIndex].name)));
++        ffxUtf8ToWide(pShaderBlob->boundConstantBufferNames[cbIndex], outPipeline->constantBufferBindings[cbIndex].name);
+     }
+ 
+     outPipeline->constCount = pShaderBlob->cbvCount;
+@@ -3438,7 +3426,7 @@ FfxErrorCode CreatePipelineDX12(
+         return FFX_ERROR_BACKEND_API_ERROR;
+ 
+     // Set the pipeline name
+-    reinterpret_cast<ID3D12PipelineState*>(outPipeline->pipeline)->SetName(pipelineDescription->name);
++    reinterpret_cast<ID3D12PipelineState*>(outPipeline->pipeline)->SetName(FfxDX12Name(pipelineDescription->name));
+     wcscpy_s(outPipeline->name, pipelineDescription->name);
+ 
+     return FFX_OK;
