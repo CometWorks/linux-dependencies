@@ -14,8 +14,7 @@ are shared byte-identically between the two game archives.
 | DXVK Native + `Patches/dxvk/` series | both | tag `v3.0.2` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
 | SDL3 | both | tag `release-3.4.12` | zlib | `Scripts/build_sdl3.sh` |
 | vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
-| DirectX Shader Compiler | SE2 | tag `v1.9.2607` (commit `0d3ee6b5…`) | NCSA/LLVM Release License | `Scripts/build_dxc.sh` |
-| SE2 DXC ABI shim (`Sources/dxc-bridge/`) | SE2 | first-party, built against the DXC pin above | MIT | `Scripts/build_dxc.sh` |
+| DirectX Shader Compiler + `Patches/dxc/` series | SE2 | tag `v1.9.2607` (commit `0d3ee6b5…`) + patch-series hash | NCSA/LLVM Release License | `Scripts/build_dxc.sh` |
 | OpenAL Soft | SE1 | 1.25.2 (release tarball) | LGPL-2.0-or-later | `Scripts/build_openal.sh` |
 | Steamworks.NET | Steam | commit `68e72a49caf03a07722d4d4b471bbc7c0785f80b` | MIT | `Scripts/build_steamworks_net.sh` |
 | EOS SDK | SE1 | vendor blob (manual) | proprietary (Epic) | committed under `Vendor/` |
@@ -26,10 +25,8 @@ SDL3 has a double role: it supplies the headers DXVK compiles against *and*
 ships as `libSDL3.so`, because DXVK's window-system integration dlopens it at
 runtime. See [SDL3](#sdl3-3412).
 
-Every entry above is third-party code except the DXC ABI shim, which is the
-only shipped binary compiled from source that lives in this repository. It is
-built in the same step as the compiler it wraps, for the reasons in
-[DirectX Shader Compiler](#directx-shader-compiler-v192607-se2-archive-only).
+The DXC patch is maintained in this repository; every shipped binary is built
+from upstream or vendor source rather than first-party source.
 
 ---
 
@@ -250,12 +247,11 @@ Being LGPL-2.1, the SE2 archive carries `LICENSES/VKD3D-LGPL-2.1.txt` plus
 
 ## DirectX Shader Compiler v1.9.2607 (SE2 archive only)
 
-**Produces:** two files, staged straight into `build/Libraries-SE2/`:
+**Produces:** one file, staged straight into `build/Libraries-SE2/`:
 
 | File | What it is |
 | --- | --- |
-| `libdxcompiler.so` | upstream DXC, built from source, unpatched |
-| `libSE2DxcCompiler.so` | the first-party ABI shim in front of it, built from [Sources/dxc-bridge/](../Sources/dxc-bridge/) |
+| `libdxcompiler.so` | DXC built from source with the [SE2 ABI patch](../Patches/dxc/) |
 
 **Source:** `https://github.com/microsoft/DirectXShaderCompiler.git` at tag
 `v1.9.2607`, commit `0d3ee6b551b8fa768fbf825300ebab81047ef6a8`, cached under
@@ -266,9 +262,9 @@ the pinned SHA, so a moved tag fails the build instead of shipping quietly.
 
 **Consumed by:** the Space Engineers 2 client. SE2 compiles all of its
 shaders at runtime through `Vortice.Dxc`, which P/Invokes `DxcCreateInstance`
-from `dxcompiler.dll`; the Linux port redirects that to
-`libSE2DxcCompiler.so`. Space Engineers 1 uses D3DCompiler, not DXC, so
-neither file goes into the SE1 archive.
+from `dxcompiler.dll`; the Linux port redirects that to `libdxcompiler.so`.
+Space Engineers 1 uses D3DCompiler, not DXC, so the file does not go into the
+SE1 archive.
 
 ### Why this pin
 
@@ -283,15 +279,13 @@ SE2: the only breaking HLSL change in `v1.9.2607` is that the `volatile`
 keyword is no longer accepted, and none of SE2's 660 shader source files use
 it.
 
-### Why the shim exists
+### Why the ABI patch exists
 
 DXC's Linux `WCHAR` is the platform `wchar_t`, which is 4 bytes.
 `Vortice.Dxc` marshals every string as the Windows 2-byte wire type. The two
 ABIs disagree at every string argument and every string-returning interface,
-so `libSE2DxcCompiler.so` sits in between: it exports the two
-`DxcCreateInstance` entry points, forwards them to the real compiler, and
-wraps `IDxcCompiler3`, `IDxcResult` and the caller's include handler to
-convert strings across the boundary.
+so the patch converts compiler arguments, result names and include callbacks
+at the existing DXC ABI boundaries.
 
 Building DXC with `-fshort-wchar` instead — making the whole library speak
 2-byte `WCHAR` so no shim is needed — does not work. `libdxcompiler.so`
@@ -299,17 +293,8 @@ imports eight wide-char functions from glibc (`wcslen`, `wcscmp`, `wcsncmp`,
 `wcsncpy`, `wmemcmp`, `wmemcpy`, `mbstowcs`, `wcstombs`), and a 2-byte
 `wchar_t` build would silently mismatch every one of them.
 
-The shim reimplements COM vtables by deriving from the interfaces in
-`<dxc/dxcapi.h>`, so its layout is bound to the DXC version it wraps. That is
-why it is built in this step, against the headers of the tree just compiled,
-rather than living in a consuming repository: an interface gaining a method
-upstream is a silent ABI break, not a compile error, and splitting the two
-across repositories is how that drift goes unnoticed. See
-[Sources/dxc-bridge/README.md](../Sources/dxc-bridge/README.md).
-
-The shim resolves its backend by SONAME (`libdxcompiler.so`) through its own
-`DT_RUNPATH` of `$ORIGIN`, so it always finds the copy staged beside it.
-`SE2_DXCOMPILER_BACKEND` overrides that with an explicit path for debugging.
+The patch also removes `-WX` and corrects ACP source lengths, preserving the
+behavior previously supplied by the separate bridge library.
 
 ### Why `libdxil.so` is not shipped
 
@@ -353,14 +338,14 @@ DirectX-Headers, next to `LICENSES/DXC-LICENSE.txt` and
 
 The build is about 19 minutes on a GitHub-hosted 4-vCPU runner, and by far
 the longest step in the pipeline — more than everything else combined. The cmake build tree (~270 MB) is deleted once the
-outputs are staged; set `DXC_KEEP_BUILD_TREE=1` to keep it when iterating.
-The clone itself (~250 MB) stays, because the shim compiles against its
-headers.
+output is staged; set `DXC_KEEP_BUILD_TREE=1` to keep it when iterating. The
+clone itself (~250 MB) stays to avoid another fetch on the next build.
 
 ### Post-build verification
 
 The script asserts that the generated `include/llvm/Config/config.h` reads
-`PACKAGE_VERSION "3.7-v1.9.2607"` before deleting the build tree. The
+`PACKAGE_VERSION "3.7-v1.9.2607-dirty"` before deleting the build tree; the
+suffix records the applied patch series. The
 corresponding runtime string is *not* checkable with `strings` on the
 finished `.so`: those literals end up in an unterminated 16-byte merged
 constant pool where the tag reads back truncated as `3.7-v1.9.26`.

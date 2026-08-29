@@ -25,7 +25,7 @@ What each group is for:
 | `meson`, `ninja-build`, `glslang-tools`, `libvulkan-dev` | DXVK Native and vkd3d-proton |
 | `mingw-w64-tools` | `widl`, the Wine IDL compiler vkd3d-proton generates its COM headers with (`wine64-tools` works too; the build script shims whichever name is found) |
 | `cmake` (>= 3.20) | the pinned SDL3 that DXVK compiles against and that we ship, OpenAL Soft, and the DirectX Shader Compiler |
-| `ninja-build`, `python3`, `cmake` | the DirectX Shader Compiler and the SE2 ABI shim built alongside it |
+| `ninja-build`, `python3`, `cmake` | the DirectX Shader Compiler |
 | `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxi-dev`, `libxfixes-dev`, `libxrandr-dev`, `libxrender-dev`, `libxss-dev`, `libxtst-dev` | SDL3's X11 video driver — see below |
 | `libwayland-dev`, `wayland-protocols`, `libdecor-0-dev`, `libxkbcommon-dev`, `libegl-dev`, `libdrm-dev`, `libgbm-dev` | SDL3's Wayland and KMSDRM video drivers — see below |
 | `libpulse-dev`, `libasound2-dev`, `libpipewire-0.3-dev` | OpenAL's audio backends — see below |
@@ -57,7 +57,7 @@ Subsequent runs are near-instant when nothing changed — see
 [Caching](#caching).
 
 Peak disk use is around 550 MB for the DXC clone and its build tree; the
-build tree is deleted once its two libraries are staged.
+build tree is deleted once its library is staged.
 
 ### Options
 
@@ -126,7 +126,7 @@ rerun does no work:
 | SDL3 | `build/SDL/` (clone), `build/sdl3-prefix/`, `build/sdl3.stamp` | A changed `SDL3_VERSION`, or a bumped `CONFIG_REV` in `build_sdl3.sh` (its cmake options are part of the stamp) |
 | OpenAL | `build/openal-soft-1.25.2.tar.bz2`, `build/openal-soft-1.25.2/`, `build/openal.stamp` | A changed `OPENAL_VERSION` |
 | Steamworks.NET | `build/Steamworks.NET/` (clone), `build/steamworks-net.stamp` | A changed `STEAMWORKS_NET_COMMIT` |
-| DXC | `build/dxc/` (clone), `build/dxc.stamp` | A changed `DXC_COMMIT` **or** any edit to `Sources/dxc-bridge/DxcCompilerBridge.cpp` (its SHA-256 is part of the stamp) |
+| DXC | `build/dxc/` (clone), `build/dxc.stamp` | A changed `DXC_COMMIT` **or** any change to the `Patches/dxc/*.patch` series |
 
 Only SDL3's *build* is cached; its staging step runs every time, so a wiped
 `build/Libraries*/` is repopulated without a rebuild. `build_dxvk.sh` also
@@ -150,7 +150,7 @@ To force specific work:
 rm build/dxvk.stamp                # rebuild DXVK only
 rm build/sdl3.stamp                # rebuild SDL3 only
 rm build/vkd3d-proton.stamp        # rebuild vkd3d-proton only
-rm build/dxc.stamp                 # rebuild DXC + the ABI shim (~19 min)
+rm build/dxc.stamp                 # rebuild DXC (~19 min)
 rm build/ffmpeg.stamp              # re-stage FFmpeg (incremental make)
 rm -rf build/ffmpeg-8.1            # re-extract and reconfigure FFmpeg
 rm build/ffmpeg-8.1.tar.xz         # re-download the FFmpeg tarball

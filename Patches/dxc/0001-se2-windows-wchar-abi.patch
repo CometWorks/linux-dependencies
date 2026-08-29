@@ -1,0 +1,306 @@
+diff --git a/include/dxc/Support/dxcapi.impl.h b/include/dxc/Support/dxcapi.impl.h
+index 654b845..f8a9e7e 100644
+--- a/include/dxc/Support/dxcapi.impl.h
++++ b/include/dxc/Support/dxcapi.impl.h
+@@ -17,6 +17,9 @@
+ #include "llvm/ADT/ArrayRef.h"
+ #include "llvm/Support/raw_ostream.h"
+ 
++#include <atomic>
++#include <string>
++
+ // Simple adaptor for IStream. Can probably do better.
+ class raw_stream_ostream : public llvm::raw_ostream {
+ private:
+@@ -34,6 +37,60 @@ public:
+ };
+ 
+ namespace {
++std::u16string NativeToWindowsString(LPCWSTR value) {
++  std::u16string result;
++  if (!value)
++    return result;
++  for (; *value; ++value) {
++    uint32_t codepoint = static_cast<uint32_t>(*value);
++    if (codepoint <= 0xffff)
++      result.push_back(static_cast<char16_t>(codepoint));
++    else {
++      codepoint -= 0x10000;
++      result.push_back(static_cast<char16_t>(0xd800 + (codepoint >> 10)));
++      result.push_back(static_cast<char16_t>(0xdc00 + (codepoint & 0x3ff)));
++    }
++  }
++  return result;
++}
++
++class DxcWindowsBlob final : public IDxcBlobWide {
++public:
++  explicit DxcWindowsBlob(std::u16string data) : m_data(std::move(data)) {}
++
++  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **object) override {
++    return DoBasicQueryInterface<IDxcBlob, IDxcBlobEncoding, IDxcBlobWide>(
++        this, iid, object);
++  }
++  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_references; }
++  ULONG STDMETHODCALLTYPE Release() override {
++    ULONG references = --m_references;
++    if (!references)
++      delete this;
++    return references;
++  }
++  LPVOID STDMETHODCALLTYPE GetBufferPointer() override { return m_data.data(); }
++  SIZE_T STDMETHODCALLTYPE GetBufferSize() override {
++    return (m_data.size() + 1) * sizeof(char16_t);
++  }
++  HRESULT STDMETHODCALLTYPE GetEncoding(BOOL *known,
++                                        UINT32 *codePage) override {
++    if (!known || !codePage)
++      return E_POINTER;
++    *known = TRUE;
++    *codePage = DXC_CP_UTF16;
++    return S_OK;
++  }
++  LPCWSTR STDMETHODCALLTYPE GetStringPointer() override {
++    return reinterpret_cast<LPCWSTR>(m_data.c_str());
++  }
++  SIZE_T STDMETHODCALLTYPE GetStringLength() override { return m_data.size(); }
++
++private:
++  std::atomic<ULONG> m_references{1};
++  std::u16string m_data;
++};
++
+ HRESULT TranslateUtf8StringForOutput(LPCSTR pStr, SIZE_T size, UINT32 codePage,
+                                      IDxcBlobEncoding **ppBlobEncoding) {
+   CComPtr<IDxcBlobEncoding> pBlobEncoding;
+@@ -445,7 +502,15 @@ public:
+       *ppOutputName = nullptr;
+     IFR(object.object->QueryInterface(iid, ppvObject));
+     if (ppOutputName && object.name) {
+-      object.name.CopyTo(ppOutputName);
++      try {
++        *ppOutputName =
++            new DxcWindowsBlob(NativeToWindowsString(
++                object.name->GetStringPointer()));
++      } catch (const std::bad_alloc &) {
++        static_cast<IUnknown *>(*ppvObject)->Release();
++        *ppvObject = nullptr;
++        return E_OUTOFMEMORY;
++      }
+     }
+     return S_OK;
+   }
+diff --git a/tools/clang/tools/dxcompiler/dxcfilesystem.cpp b/tools/clang/tools/dxcompiler/dxcfilesystem.cpp
+index b2e38fe..b4c4cd1 100644
+--- a/tools/clang/tools/dxcompiler/dxcfilesystem.cpp
++++ b/tools/clang/tools/dxcompiler/dxcfilesystem.cpp
+@@ -269,8 +269,8 @@ private:
+       CComPtr<::IDxcBlob> fileBlob;
+ 
+       std::wstring NormalizedFileName = hlsl::NormalizePathW(lpFileName);
+-      HRESULT hr =
+-          m_includeLoader->LoadSource(NormalizedFileName.c_str(), &fileBlob);
++      HRESULT hr = dxcutil::LoadWindowsInclude(
++          m_includeLoader, NormalizedFileName.c_str(), &fileBlob);
+       if (FAILED(hr)) {
+         return ERROR_UNHANDLED_EXCEPTION;
+       }
+diff --git a/tools/clang/tools/dxcompiler/dxcompilerobj.cpp b/tools/clang/tools/dxcompiler/dxcompilerobj.cpp
+index e39381e..618f70d 100644
+--- a/tools/clang/tools/dxcompiler/dxcompilerobj.cpp
++++ b/tools/clang/tools/dxcompiler/dxcompilerobj.cpp
+@@ -522,6 +522,36 @@ public:
+                                            // #include directives (optional)
+       REFIID riid, LPVOID *ppResult // IDxcResult: status, buffer, and errors
+       ) override {
++    if (!pSource || !ppResult || (argCount > 0 && !pArguments))
++      return E_INVALIDARG;
++    try {
++      std::vector<std::wstring> convertedArguments;
++      std::vector<LPCWSTR> nativeArguments;
++      convertedArguments.reserve(argCount);
++      nativeArguments.reserve(argCount);
++      for (UINT32 i = 0; i < argCount; ++i) {
++        std::wstring argument =
++            dxcutil::WindowsToNativeString(pArguments[i]);
++        if (argument != L"-WX")
++          convertedArguments.push_back(std::move(argument));
++      }
++      for (const std::wstring &argument : convertedArguments)
++        nativeArguments.push_back(argument.c_str());
++
++      DxcBuffer correctedSource = *pSource;
++      if (correctedSource.Ptr && correctedSource.Encoding == DXC_CP_ACP)
++        correctedSource.Size =
++            strlen(static_cast<const char *>(correctedSource.Ptr));
++      return CompileNative(&correctedSource, nativeArguments.data(),
++                           static_cast<UINT32>(nativeArguments.size()),
++                           pIncludeHandler, riid, ppResult);
++    }
++    CATCH_CPP_RETURN_HRESULT();
++  }
++
++  HRESULT CompileNative(
++      const DxcBuffer *pSource, LPCWSTR *pArguments, UINT32 argCount,
++      IDxcIncludeHandler *pIncludeHandler, REFIID riid, LPVOID *ppResult) {
+     llvm::TimeTraceScope TimeScope("Compile", StringRef(""));
+     if (pSource == nullptr || ppResult == nullptr ||
+         (argCount > 0 && pArguments == nullptr))
+@@ -629,8 +659,8 @@ public:
+         PreprocessArgs.push_back(L"-P");
+         PreprocessArgs.push_back(L"-Fi");
+         PreprocessArgs.push_back(L"preprocessed.hlsl");
+-        IFT(Compile(pSource, PreprocessArgs.data(), PreprocessArgs.size(),
+-                    pIncludeHandler, IID_PPV_ARGS(&pSrcCodeResult)));
++        IFT(CompileNative(pSource, PreprocessArgs.data(), PreprocessArgs.size(),
++                          pIncludeHandler, IID_PPV_ARGS(&pSrcCodeResult)));
+         HRESULT status;
+         IFT(pSrcCodeResult->GetStatus(&status));
+         if (SUCCEEDED(status)) {
+@@ -791,7 +821,8 @@ public:
+                       "' specified, but no include handler was given.";
+             os.flush();
+             return ErrorWithString(error, riid, ppResult);
+-          } else if (SUCCEEDED(pIncludeHandler->LoadSource(wstrRef, &pBlob))) {
++          } else if (SUCCEEDED(dxcutil::LoadWindowsInclude(
++                         pIncludeHandler, wstrRef, &pBlob))) {
+             bool succ = hlsl::ParseBindingTable(
+                 opts.ImportBindingTable,
+                 StringRef((const char *)pBlob->GetBufferPointer(),
+@@ -994,8 +1025,8 @@ public:
+                       "' specified, but no include handler was given.";
+             os.flush();
+             return ErrorWithString(error, riid, ppResult);
+-          } else if (SUCCEEDED(pIncludeHandler->LoadSource(
+-                         wstrRef, &pRootSignatureBlob))) {
++          } else if (SUCCEEDED(dxcutil::LoadWindowsInclude(
++                         pIncludeHandler, wstrRef, &pRootSignatureBlob))) {
+           } else {
+             os << Twine("Could not load root signature file '") +
+                       opts.RootSignatureSource + "'.";
+@@ -1012,8 +1043,8 @@ public:
+                       "' specified, but no include handler was given.";
+             os.flush();
+             return ErrorWithString(error, riid, ppResult);
+-          } else if (SUCCEEDED(
+-                         pIncludeHandler->LoadSource(wstrRef, &pPrivateBlob))) {
++          } else if (SUCCEEDED(dxcutil::LoadWindowsInclude(
++                         pIncludeHandler, wstrRef, &pPrivateBlob))) {
+           } else {
+             os << Twine("Could not load root signature file '") +
+                       opts.PrivateSource + "'.";
+diff --git a/tools/clang/tools/dxcompiler/dxcutil.cpp b/tools/clang/tools/dxcompiler/dxcutil.cpp
+index 880a207..50f113c 100644
+--- a/tools/clang/tools/dxcompiler/dxcutil.cpp
++++ b/tools/clang/tools/dxcompiler/dxcutil.cpp
+@@ -47,6 +47,89 @@ HRESULT RunInternalValidator(IDxcValidator *pValidator,
+ 
+ namespace dxcutil {
+ 
++static std::vector<char> WindowsToUtf8(const char16_t *value, size_t length) {
++  std::vector<char> result;
++  result.reserve(length);
++  for (size_t i = 0; i < length; ++i) {
++    uint32_t codepoint = value[i];
++    if (codepoint >= 0xd800 && codepoint <= 0xdbff && i + 1 < length &&
++        value[i + 1] >= 0xdc00 && value[i + 1] <= 0xdfff)
++      codepoint =
++          0x10000 + ((codepoint - 0xd800) << 10) + (value[++i] - 0xdc00);
++
++    if (codepoint <= 0x7f)
++      result.push_back(static_cast<char>(codepoint));
++    else if (codepoint <= 0x7ff) {
++      result.push_back(static_cast<char>(0xc0 | (codepoint >> 6)));
++      result.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
++    } else if (codepoint <= 0xffff) {
++      result.push_back(static_cast<char>(0xe0 | (codepoint >> 12)));
++      result.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
++      result.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
++    } else {
++      result.push_back(static_cast<char>(0xf0 | (codepoint >> 18)));
++      result.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3f)));
++      result.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
++      result.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
++    }
++  }
++  return result;
++}
++
++std::wstring WindowsToNativeString(LPCWSTR value) {
++  const char16_t *input = reinterpret_cast<const char16_t *>(value);
++  std::wstring result;
++  if (!input)
++    return result;
++
++  while (*input) {
++    uint32_t codepoint = *input++;
++    if (codepoint >= 0xd800 && codepoint <= 0xdbff && *input >= 0xdc00 &&
++        *input <= 0xdfff)
++      codepoint =
++          0x10000 + ((codepoint - 0xd800) << 10) + (*input++ - 0xdc00);
++    result.push_back(static_cast<wchar_t>(codepoint));
++  }
++  return result;
++}
++
++HRESULT LoadWindowsInclude(IDxcIncludeHandler *handler, LPCWSTR filename,
++                           IDxcBlob **source) {
++  std::u16string windowsFilename;
++  for (; *filename; ++filename) {
++    uint32_t codepoint = static_cast<uint32_t>(*filename);
++    if (codepoint <= 0xffff)
++      windowsFilename.push_back(static_cast<char16_t>(codepoint));
++    else {
++      codepoint -= 0x10000;
++      windowsFilename.push_back(
++          static_cast<char16_t>(0xd800 + (codepoint >> 10)));
++      windowsFilename.push_back(
++          static_cast<char16_t>(0xdc00 + (codepoint & 0x3ff)));
++    }
++  }
++
++  HRESULT status = handler->LoadSource(
++      reinterpret_cast<LPCWSTR>(windowsFilename.c_str()), source);
++  if (FAILED(status) || !source || !*source)
++    return status;
++
++  CComPtr<IDxcBlob> windowsSource;
++  windowsSource.Attach(*source);
++  *source = nullptr;
++  size_t byteLength = windowsSource->GetBufferSize();
++  if (byteLength % sizeof(char16_t))
++    return E_FAIL;
++
++  std::vector<char> utf8 = WindowsToUtf8(
++      static_cast<const char16_t *>(windowsSource->GetBufferPointer()),
++      byteLength / sizeof(char16_t));
++  CComPtr<IDxcBlobEncoding> utf8Source;
++  IFR(hlsl::DxcCreateBlobWithEncodingOnHeapCopy(
++      utf8.data(), utf8.size(), DXC_CP_UTF8, &utf8Source));
++  return utf8Source.QueryInterface(source);
++}
++
+ AssembleInputs::AssembleInputs(
+     std::unique_ptr<llvm::Module> &&pM, CComPtr<IDxcBlob> &pOutputContainerBlob,
+     IMalloc *pMalloc, hlsl::SerializeDxilFlags SerializeFlags,
+diff --git a/tools/clang/tools/dxcompiler/dxcutil.h b/tools/clang/tools/dxcompiler/dxcutil.h
+index 8612353..6159c70 100644
+--- a/tools/clang/tools/dxcompiler/dxcutil.h
++++ b/tools/clang/tools/dxcompiler/dxcutil.h
+@@ -19,6 +19,7 @@
+ #include "llvm/ADT/StringRef.h"
+ 
+ #include <memory>
++#include <string>
+ 
+ namespace clang {
+ class DiagnosticsEngine;
+@@ -94,4 +95,8 @@ void CreateOperationResultFromOutputs(IDxcBlob *pResultBlob,
+ 
+ bool IsAbsoluteOrCurDirRelative(const llvm::Twine &T);
+ 
++std::wstring WindowsToNativeString(LPCWSTR value);
++HRESULT LoadWindowsInclude(IDxcIncludeHandler *handler, LPCWSTR filename,
++                           IDxcBlob **source);
++
+ } // namespace dxcutil

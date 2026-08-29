@@ -143,8 +143,8 @@ exactly which path each file came from.
 
 The Space Engineers 2 Linux port consumes `se2-dependencies.tar.gz`,
 which carries the patched DXVK build and `libSDL3.so` (both byte-identical
-to the SE1 archive's copies), the patched vkd3d-proton build, the DirectX
-Shader Compiler with its ABI shim, and the FMOD Engine runtime — see
+to the SE1 archive's copies), the patched vkd3d-proton build, the patched
+DirectX Shader Compiler, and the FMOD Engine runtime — see
 [release-archive.md](release-archive.md#layout-se2-archive) for the exact
 contents. It follows the same fetch pattern (same release, second asset name)
 and the same rules: extract with symlink-preserving `tar`, keep `LICENSES/`

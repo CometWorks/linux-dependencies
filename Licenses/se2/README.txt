@@ -27,9 +27,8 @@ Files in this directory:
                                   SPIRV-Tools, SPIRV-Headers and
                                   DirectX-Headers, which are statically
                                   linked into libdxcompiler.so
-    DXC-README.txt                Build provenance for libdxcompiler.so and
-                                  the first-party libSE2DxcCompiler.so shim
-                                  in front of it; why libdxil.so is absent
+    DXC-README.txt                Build provenance for the patched
+                                  libdxcompiler.so; why libdxil.so is absent
     FMOD-EULA.txt                 FMOD End User License Agreement covering
                                   libfmod.so and libfmodstudio.so
                                   (proprietary, Firelight Technologies)

@@ -9,18 +9,18 @@ name: Build
 #                                Linux and Magnetar.
 #   * se2-dependencies.tar.gz    Space Engineers 2 — the same patched DXVK
 #                                build plus vkd3d-proton, the DirectX Shader
-#                                Compiler with the first-party ABI shim in
-#                                front of it, and the FMOD runtime.
+#                                Compiler with its SE2 ABI patch, and the FMOD
+#                                runtime.
 #   * steam-dependencies.tar.gz  Steamworks.NET.dll + libsteam_api.so,
 #                                consumed alongside either of the above.
 #
 # DXVK and SDL3 are built once; the identical binaries ship in both game
-# archives. vkd3d-proton and the DXC pair are SE2-only.
+# archives. vkd3d-proton and DXC are SE2-only.
 #
 # Wall-clock on a cold run is about 31 minutes, of which the DirectX Shader
 # Compiler is roughly 19 -- more than everything else put together.
-# Scripts/build_dxc.sh deletes its cmake build tree once the two libraries
-# are staged, so the peak disk footprint stays within the runner's 14 GB.
+# Scripts/build_dxc.sh deletes its cmake build tree once the library is staged,
+# so the peak disk footprint stays within the runner's 14 GB.
 #
 # Every dependency's staged output is cached, so a run only pays for what
 # actually changed. The cache key IS the build script's own cache stamp: each
@@ -104,7 +104,6 @@ jobs:
       CACHE_PATHS_DXC: |
         build/dxc.stamp
         build/Libraries-SE2/libdxcompiler.so
-        build/Libraries-SE2/libSE2DxcCompiler.so
       CACHE_PATHS_OPENAL: |
         build/openal.stamp
         build/Libraries/libopenal.so
@@ -142,10 +141,9 @@ jobs:
           #          the build would silently produce an OpenAL with no audio
           #          backends; build_openal.sh passes ALSOFT_REQUIRE_* so a
           #          missing one fails the configure instead.
-          # cmake/ninja-build/python3 -> the DirectX Shader Compiler, and the
-          #          SE2 ABI shim g++ builds against its headers in the same
-          #          step (Scripts/build_dxc.sh). ubuntu-24.04's cmake 3.28
-          #          clears the >= 3.20 floor DXC needs.
+          # cmake/ninja-build/python3 -> the DirectX Shader Compiler
+          #          (Scripts/build_dxc.sh). ubuntu-24.04's cmake 3.28 clears
+          #          the >= 3.20 floor DXC needs.
           # patchelf/binutils -> DT_RUNPATH patching + readelf verification
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config make cmake python3 curl tar git \
