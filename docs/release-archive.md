@@ -102,9 +102,7 @@ libSDL3.so                    identical to the SE1 archive's copy
 libvkd3d-proton-d3d12.so      patched, see Patches/vkd3d-proton/ (SE2 only)
 libvkd3d-proton-d3d12core.so  patched (SE2 only)
 libdxcompiler.so              DirectX Shader Compiler v1.9.2607, built from
-                              source, unpatched (SE2 only)
-libSE2DxcCompiler.so          first-party ABI shim in front of it, source at
-                              Sources/dxc-bridge/ (SE2 only)
+                               source with Patches/dxc/ (SE2 only)
 libfmod.so                    FMOD Core API runtime (unmodified vendor blob)
 libfmodstudio.so              FMOD Studio API runtime (unmodified vendor blob)
 LICENSES/DXC-BUNDLED-LICENSES.txt
@@ -128,17 +126,9 @@ signature included. Consumers that used to stage all three files should drop
 it rather than sourcing it elsewhere; see
 [dependencies.md](dependencies.md#why-libdxilso-is-not-shipped).
 
-**The DXC pair links against nothing exotic.** `libdxcompiler.so` and
-`libSE2DxcCompiler.so` resolve only to glibc, `libstdc++`, `libgcc_s` and
-`libm`, the same floor as the rest of the archive.
-
-**`libSE2DxcCompiler.so` finds its backend by itself.** The shim `dlopen`s
-`libdxcompiler.so` through its own `DT_RUNPATH=$ORIGIN`, so both files simply
-have to be extracted into the same directory — there is no load-order
-requirement and no `LD_LIBRARY_PATH` to set. `SE2_DXCOMPILER_BACKEND`
-overrides the path if a consumer needs to point at a different compiler.
-Consumers must **not** install a `libdxcompiler.so` elsewhere on the loader
-path expecting it to be picked up instead.
+**DXC links against nothing exotic.** `libdxcompiler.so` resolves only to
+glibc, `libstdc++`, `libgcc_s` and `libm`, the same floor as the rest of the
+archive.
 
 The SDL3 SONAME note from the SE1 section applies here too: the SE2 port must
 load `libSDL3.so` from the bundle before DXVK initialises.
@@ -241,6 +231,5 @@ glibc for every downstream user without any visible change in this repo.
 Draft pull requests are skipped so that work in progress does not spend CI
 minutes on the build — which is now dominated by the DirectX Shader Compiler
 at roughly 19 of its 31 minutes. The
-`build_dxc.sh` step deletes its cmake build tree once the two libraries are
-staged, keeping the job's peak disk use within what a GitHub-hosted runner
-provides.
+`build_dxc.sh` step deletes its cmake build tree once the library is staged,
+keeping the job's peak disk use within what a GitHub-hosted runner provides.

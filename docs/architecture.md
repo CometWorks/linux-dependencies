@@ -34,8 +34,7 @@ for the PE-loader shims.
 | `libdxvk_d3d11.so`, `libdxvk_dxgi.so` | both | DXVK Native 3.0.2 + the `Patches/dxvk/` series, built once from the upstream git tag |
 | `libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so` | SE2 | vkd3d-proton at a pinned commit + the `Patches/vkd3d-proton/` series |
 | `libSDL3.so` | both | SDL3 3.4.12, built once from the upstream release tag; DXVK compiles against its headers and dlopens it at runtime |
-| `libdxcompiler.so` | SE2 | DirectX Shader Compiler at tag `v1.9.2607`, built from source (unpatched) rather than taken from Microsoft's binary release |
-| `libSE2DxcCompiler.so` | SE2 | First-party ABI shim over the above, built from `Sources/dxc-bridge/` against that same tree's headers |
+| `libdxcompiler.so` | SE2 | DirectX Shader Compiler at tag `v1.9.2607` + the `Patches/dxc/` ABI compatibility patch, built from source rather than taken from Microsoft's binary release |
 | `libopenal.so` | SE1 | OpenAL Soft 1.25.2, built from the upstream release tarball |
 | `Steamworks.NET.dll` | Steam | Built from a pinned commit of rlabrecque/Steamworks.NET |
 | `libEOSSDK-Linux-Shipping.so` | SE1 | Proprietary Epic blob, committed under `Vendor/` |
@@ -52,14 +51,11 @@ Three policies shape the archive split:
   DXVK binaries were compiled against keeps the pair a matched set instead of
   depending on whatever the host distribution has.
 * **Everything new with the SE2 port ships only in the SE2 archive.**
-  vkd3d-proton, the DXC pair and FMOD go to `se2-dependencies.tar.gz` alone,
+  vkd3d-proton, DXC and FMOD go to `se2-dependencies.tar.gz` alone,
   so SE1 consumers never download or ship libraries they cannot use.
-* **A shim that is bound to a library's ABI is built next to that library.**
-  `libSE2DxcCompiler.so` derives from the COM interfaces in DXC's headers,
-  so its vtable layout tracks the DXC version. It is compiled in the same
-  step, against the tree just built, rather than kept in the consuming repo
-  where an upstream interface change would break it silently. It is the only
-  first-party binary in any of the archives.
+* **ABI fixes live in the dependency source.** DXC's Windows-string
+  conversions are applied from `Patches/dxc/` before the compiler is built,
+  avoiding a separately version-coupled bridge library.
 * **The Steam bits ship in their own archive.** `Steamworks.NET.dll` and
   `libsteam_api.so` belong together (the managed binding and its native
   runtime) and are game-agnostic, so `steam-dependencies.tar.gz` is

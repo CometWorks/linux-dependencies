@@ -30,10 +30,8 @@
 #   4. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
 #                                       Patches/vkd3d-proton/, staged straight
 #                                       into Libraries-SE2/
-#   5. Scripts/build_dxc.sh             DirectX Shader Compiler v1.9.2607
-#                                       (libdxcompiler.so) plus the SE2 ABI
-#                                       shim built from Sources/dxc-bridge/
-#                                       (libSE2DxcCompiler.so), staged
+#   5. Scripts/build_dxc.sh             Patched DirectX Shader Compiler
+#                                       v1.9.2607 (libdxcompiler.so), staged
 #                                       straight into Libraries-SE2/
 #   6. Scripts/build_openal.sh          OpenAL Soft 1.25.2 (libopenal.so)
 #   7. Scripts/build_steamworks_net.sh  Steamworks.NET.dll, staged straight
@@ -373,9 +371,8 @@ EXPECTED_FILES_SE2=(
     libSDL3.so
     # vkd3d-proton (patched)
     libvkd3d-proton-d3d12.so libvkd3d-proton-d3d12core.so
-    # DXC + the SE2 ABI shim in front of it (libdxil.so is deliberately absent)
+    # Patched DXC (libdxil.so is deliberately absent)
     libdxcompiler.so
-    libSE2DxcCompiler.so
     # FMOD (vendor blobs staged under bare names)
     libfmod.so
     libfmodstudio.so

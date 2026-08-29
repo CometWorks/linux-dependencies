@@ -2,27 +2,20 @@
 # build_dxc.sh
 #
 # Builds the DirectX Shader Compiler (DXC) from upstream sources at
-# https://github.com/microsoft/DirectXShaderCompiler, then builds the small
-# C++ ABI shim that sits in front of it, and installs both into the
-# build/Libraries-SE2 staging folder:
+# https://github.com/microsoft/DirectXShaderCompiler, applies the SE2 ABI
+# compatibility patch, and installs it into build/Libraries-SE2:
 #
-#   libdxcompiler.so        upstream DXC, built from source
-#   libSE2DxcCompiler.so    the SE2 ABI shim (Sources/dxc-bridge/)
+#   libdxcompiler.so        patched DXC, built from source
 #
 # Space Engineers 2 compiles every shader through Vortice.Dxc, which
-# P/Invokes DxcCreateInstance from "dxcompiler.dll". The Linux port redirects
-# that to the shim, which forwards to libdxcompiler.so. The shim exists
-# because DXC's Linux WCHAR is a 4-byte wchar_t while Vortice marshals the
-# Windows 2-byte wire type: it wraps IDxcCompiler3, IDxcResult and the
-# include-handler callback and converts strings at that boundary. Building
-# DXC with -fshort-wchar instead is not an option — libdxcompiler.so imports
+# P/Invokes DxcCreateInstance from "dxcompiler.dll". DXC's Linux WCHAR is a
+# 4-byte wchar_t while Vortice marshals the Windows 2-byte wire type, so the
+# patch converts strings in IDxcCompiler3, IDxcResult and the include-handler
+# callback at that boundary. Building DXC with -fshort-wchar instead
+# is not an option — libdxcompiler.so imports
 # eight wide-char functions from glibc (wcslen, wcscmp, wcsncmp, wcsncpy,
 # wmemcmp, wmemcpy, mbstowcs, wcstombs) and a 2-byte wchar_t build would
 # silently mismatch every one of them.
-#
-# The shim is compiled against the headers of the exact DXC tree built here:
-# its vtable layout is bound to the DXC version it wraps, so keeping the two
-# in one build step is what stops silent ABI drift.
 #
 # libdxil.so is deliberately NOT shipped. Microsoft open-sourced the DXIL
 # validator hash, so ComputeHashRetail is compiled directly into
@@ -52,7 +45,7 @@
 #   ├── dxc/                       clone at the pinned tag (~250 MB)
 #   │   └── build/                 cmake/ninja build tree (~270 MB, deleted
 #   │                              after staging unless DXC_KEEP_BUILD_TREE=1)
-#   └── dxc.stamp                  last-built commit + shim-source hash
+#   └── dxc.stamp                  last-built commit + patch-series hash
 #
 # Usage:
 #   ./build_dxc.sh           Build (or no-op if cached).
@@ -72,7 +65,7 @@
 #   LIBRARIES_SE2_DIR     = $BUILD_DIR/Libraries-SE2
 #   JOBS                  = $(nproc)
 #
-# Requirements: git, cmake (>=3.20), ninja, python3, gcc, g++, patchelf.
+# Requirements: git, cmake (>=3.20), ninja, python3, gcc, g++.
 # A full DXC build is about 19 minutes on a GitHub-hosted 4-vCPU runner and
 # proportionally less on more cores — still several times the rest of the
 # pipeline put together. Building only the dxcompiler target in release with
@@ -94,14 +87,13 @@ BUILD_DIR="${BUILD_DIR:-$BUILD_DIR_DEFAULT}"
 LIBRARIES_SE2_DIR="${LIBRARIES_SE2_DIR:-$BUILD_DIR/Libraries-SE2}"
 JOBS="${JOBS:-$(nproc)}"
 
-BRIDGE_DIR="$REPO_DIR/Sources/dxc-bridge"
-BRIDGE_SRC="$BRIDGE_DIR/DxcCompilerBridge.cpp"
+PATCHES_DIR="$REPO_DIR/Patches/dxc"
 
 SRC_DIR="$BUILD_DIR/dxc"
 CMAKE_BUILD_DIR="$SRC_DIR/build"
 STAMP_FILE="$BUILD_DIR/dxc.stamp"
 
-EXPECTED_LIBS=(libdxcompiler.so libSE2DxcCompiler.so)
+EXPECTED_LIBS=(libdxcompiler.so)
 
 CLEAN=0
 PRINT_STAMP=0
@@ -114,14 +106,19 @@ for arg in "$@"; do
     esac
 done
 
-# The shim source is part of the cache key: editing DxcCompilerBridge.cpp
-# must invalidate the cached build even when the DXC pin is unchanged.
-[ -f "$BRIDGE_SRC" ] || {
-    echo "ERROR: shim source not found: $BRIDGE_SRC" >&2
-    exit 1
-}
-BRIDGE_HASH="$(sha256sum "$BRIDGE_SRC" | cut -d' ' -f1)"
-STAMP_CONTENT="$DXC_COMMIT bridge=$BRIDGE_HASH"
+# Apply and hash patches in deterministic order.
+PATCH_FILES=()
+if [ -d "$PATCHES_DIR" ]; then
+    while IFS= read -r p; do
+        PATCH_FILES+=("$p")
+    done < <(find "$PATCHES_DIR" -maxdepth 1 -name '*.patch' | LC_ALL=C sort)
+fi
+if [ "${#PATCH_FILES[@]}" -gt 0 ]; then
+    PATCH_HASH="$(cat "${PATCH_FILES[@]}" | sha256sum | cut -d' ' -f1)"
+else
+    PATCH_HASH="no-patches"
+fi
+STAMP_CONTENT="$DXC_COMMIT patches=$PATCH_HASH"
 
 if [ "$PRINT_STAMP" = "1" ]; then
     printf '%s\n' "$STAMP_CONTENT"
@@ -130,7 +127,7 @@ fi
 
 # ---- preflight --------------------------------------------------------------
 
-for tool in git cmake ninja python3 gcc g++ patchelf; do
+for tool in git cmake ninja python3 gcc g++; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: required tool not found in PATH: $tool" >&2
         exit 1
@@ -159,7 +156,7 @@ elif [ "$ALL_LIBS_PRESENT" = "1" ] \
    && [ "$(cat "$STAMP_FILE")" = "$STAMP_CONTENT" ]; then
     echo "==> Cached build matches DXC $DXC_TAG (${DXC_COMMIT:0:12}); skipping rebuild"
     echo "==> DXC libs already in $LIBRARIES_SE2_DIR:"
-    ( cd "$LIBRARIES_SE2_DIR" && ls -1 libdxcompiler.so libSE2DxcCompiler.so )
+    ( cd "$LIBRARIES_SE2_DIR" && ls -1 libdxcompiler.so )
     exit 0
 fi
 
@@ -193,6 +190,19 @@ fi
 echo "==> Resetting DXC source tree to pristine $DXC_TAG (${DXC_COMMIT:0:12})"
 git -C "$SRC_DIR" checkout -- .
 git -C "$SRC_DIR" clean -fdxe build --quiet
+
+if [ "${#PATCH_FILES[@]}" -eq 0 ]; then
+    echo "==> No patches under $PATCHES_DIR; building pristine upstream"
+fi
+for p in ${PATCH_FILES[@]+"${PATCH_FILES[@]}"}; do
+    echo "==> Applying $(basename "$p")"
+    if ! git -C "$SRC_DIR" apply "$p"; then
+        echo "ERROR: patch failed to apply: $p" >&2
+        echo "       The series under Patches/dxc/ needs a rebase onto" >&2
+        echo "       DXC $DXC_TAG. See docs/maintenance.md." >&2
+        exit 1
+    fi
+done
 
 # DirectX-Headers is required on every non-Windows target (reflection
 # support); the two SPIRV-* modules are required because upstream forces the
@@ -228,34 +238,11 @@ if [ -z "$DXCOMPILER_SO" ]; then
     exit 1
 fi
 
-# ---- build the SE2 ABI shim -------------------------------------------------
-# Linked against nothing but libdl: the backend is dlopened by SONAME at
-# runtime, and DT_RUNPATH=$ORIGIN makes that resolve to the libdxcompiler.so
-# staged next to it. Resolving it by name rather than an absolute path is
-# deliberate — an earlier hardcoded /usr/lib/libdxcompiler.so picked up a
-# system-installed v1.10 preview and crashed. SE2_DXCOMPILER_BACKEND still
-# overrides the path for debugging.
-
-echo "==> Building the SE2 DXC ABI shim against $SRC_DIR/include"
-g++ -O2 -fPIC -shared -std=c++20 \
-    -I "$SRC_DIR/include" \
-    -o "$BUILD_DIR/libSE2DxcCompiler.so" \
-    "$BRIDGE_SRC" \
-    -ldl -Wl,-rpath,'$ORIGIN'
-
 # ---- stage ------------------------------------------------------------------
 
-echo "==> Staging DXC libs into $LIBRARIES_SE2_DIR"
+echo "==> Staging DXC into $LIBRARIES_SE2_DIR"
 install -m 0755 "$DXCOMPILER_SO" "$LIBRARIES_SE2_DIR/libdxcompiler.so"
-install -m 0755 "$BUILD_DIR/libSE2DxcCompiler.so" "$LIBRARIES_SE2_DIR/libSE2DxcCompiler.so"
-rm -f "$BUILD_DIR/libSE2DxcCompiler.so"
-
-# Parity with the FFmpeg, DXVK and vkd3d-proton payloads: siblings resolve
-# out of the payload directory, not the system.
-echo "==> Patching DT_RUNPATH=\$ORIGIN onto DXC libs"
-for lib in "${EXPECTED_LIBS[@]}"; do
-    patchelf --set-rpath '$ORIGIN' "$LIBRARIES_SE2_DIR/$lib"
-done
+rm -f "$LIBRARIES_SE2_DIR/libSE2DxcCompiler.so"
 
 # ---- verify the configured version ------------------------------------------
 # LLVM_APPEND_VC_REV makes the configure step run `git describe` and fold the
@@ -270,17 +257,20 @@ done
 
 CONFIG_H="$CMAKE_BUILD_DIR/include/llvm/Config/config.h"
 CONFIGURED_VERSION="$(sed -n 's/^#define PACKAGE_VERSION "\(.*\)"$/\1/p' "$CONFIG_H")"
-if [ "$CONFIGURED_VERSION" != "3.7-$DXC_TAG" ]; then
+EXPECTED_CONFIGURED_VERSION="3.7-$DXC_TAG"
+if [ "${#PATCH_FILES[@]}" -gt 0 ]; then
+    EXPECTED_CONFIGURED_VERSION+="-dirty"
+fi
+if [ "$CONFIGURED_VERSION" != "$EXPECTED_CONFIGURED_VERSION" ]; then
     echo "ERROR: DXC configured itself as PACKAGE_VERSION '$CONFIGURED_VERSION'," >&2
-    echo "       expected '3.7-$DXC_TAG'. The source tree is not at the pinned tag." >&2
+    echo "       expected '$EXPECTED_CONFIGURED_VERSION'. The source tree is not at the pinned tag." >&2
     exit 1
 fi
 echo "==> DXC configured version: $CONFIGURED_VERSION"
 
 # ---- drop the build tree ----------------------------------------------------
 # ~270 MB of object files and static archives that nothing downstream reads.
-# The clone itself stays: the shim compiles against its headers, and keeping
-# it makes a re-run that only touches the shim cheap.
+# The clone itself stays to avoid another network fetch on the next build.
 
 if [ "$DXC_KEEP_BUILD_TREE" = "1" ]; then
     echo "==> Keeping the DXC build tree (DXC_KEEP_BUILD_TREE=1): $CMAKE_BUILD_DIR"
@@ -294,5 +284,5 @@ fi
 printf '%s\n' "$STAMP_CONTENT" > "$STAMP_FILE"
 
 echo
-echo "==> Staged DXC libs into $LIBRARIES_SE2_DIR:"
-( cd "$LIBRARIES_SE2_DIR" && ls -1 libdxcompiler.so libSE2DxcCompiler.so )
+echo "==> Staged DXC into $LIBRARIES_SE2_DIR:"
+( cd "$LIBRARIES_SE2_DIR" && ls -1 libdxcompiler.so )

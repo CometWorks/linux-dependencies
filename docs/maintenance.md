@@ -65,9 +65,8 @@ together, since the script fails if the tag does not resolve to the SHA.
 2. Read upstream's release notes for breaking HLSL changes and check SE2's
    shader sources against them — `v1.9.2607` disallowing `volatile` is the
    kind of change that matters.
-3. Re-check `Sources/dxc-bridge/DxcCompilerBridge.cpp` against the new
-   `include/dxc/dxcapi.h`. The shim derives from those COM interfaces, so an
-   interface gaining a method is a **silent ABI break, not a compile error**.
+3. Rebase `Patches/dxc/` and re-check its compiler, result and include-handler
+   boundary edits against the new implementations.
 4. Rebuild and smoke-test SE2 shader compilation. `DXC_KEEP_BUILD_TREE=1`
    makes the ~19 minute build reusable while iterating.
 5. Refresh `Licenses/se2/DXC-README.txt` (it names the tag and commit),
@@ -76,9 +75,8 @@ together, since the script fails if the tag does not resolve to the SHA.
    or DirectX-Headers submodule licences changed.
 6. The shipped file names stay bare, so no expected-file list changes.
 
-Editing the shim alone needs no version bump: its SHA-256 is part of
-`build/dxc.stamp`, so the next build rebuilds it (and only it, if the clone
-is still cached and `DXC_KEEP_BUILD_TREE=1` preserved the build tree).
+Editing the DXC patch needs no version bump: the patch-series hash is part of
+`build/dxc.stamp`, so the next build rebuilds DXC automatically.
 
 ## Changing a patch series
 
@@ -88,7 +86,8 @@ dependency automatically. The patched DXVK ships **in both archives** (built
 once, copied), so a DXVK patch change affects SE1 and SE2 consumers alike —
 test accordingly; vkd3d-proton ships in the SE2 archive only. For every
 patch, record in the series' README.md what it fixes and where it came from.
-Patches are applied with `git apply` in byte-wise filename order.
+Patches are applied with `git apply` in byte-wise filename order. DXC patches
+ship in the SE2 archive only.
 
 ## Bumping SDL3
 
@@ -189,8 +188,7 @@ to `build/<dep>.stamp` on success, and skips the whole build when the stamp
 and the staged files still match. CI keys its artefact cache on the same value
 via `--print-stamp`, so **anything that changes the output must be reflected
 in the stamp**. Bumping a pin does that automatically; so does editing a patch
-series, `Sources/dxc-bridge/DxcCompilerBridge.cpp`, or FFmpeg's
-`FFMPEG_CONFIGURE_FLAGS`.
+series or FFmpeg's `FFMPEG_CONFIGURE_FLAGS`.
 
 The one stamp that is **not** automatic is SDL3's `CONFIG_REV` in
 `Scripts/build_sdl3.sh`: its cmake options are not hashed, so changing them

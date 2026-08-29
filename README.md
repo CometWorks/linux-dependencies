@@ -31,8 +31,7 @@ their own archive, consumed alongside either game archive.
 | DXVK Native — same patched build as above | 3.0.2 | zlib |
 | SDL3 — same build as above | 3.4.12 | zlib |
 | vkd3d-proton (`libvkd3d-proton-d3d12.so`, `libvkd3d-proton-d3d12core.so`) + [Patches/vkd3d-proton/](Patches/vkd3d-proton/) | pinned commit | LGPL-2.1 |
-| DirectX Shader Compiler (`libdxcompiler.so`) — built from source, not the Microsoft prebuilt | v1.9.2607 | NCSA/LLVM Release License |
-| SE2 DXC ABI shim (`libSE2DxcCompiler.so`) — first-party, source in [Sources/dxc-bridge/](Sources/dxc-bridge/) | built against the DXC pin above | MIT |
+| DirectX Shader Compiler (`libdxcompiler.so`) + [SE2 ABI patch](Patches/dxc/) — built from source, not the Microsoft prebuilt | v1.9.2607 | NCSA/LLVM Release License |
 | FMOD Engine (`libfmod.so`, `libfmodstudio.so`) | 2.03.11, matching the game | proprietary (Firelight) |
 
 ### `steam-dependencies.tar.gz` — Steam integration
