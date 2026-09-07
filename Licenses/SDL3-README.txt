@@ -10,7 +10,7 @@ License
 zlib license. See SDL3-LICENSE.txt in this directory for the full text.
 
 The library is unmodified upstream SDL3 — no patches are applied. The only
-post-build change to the binary is a patchelf step setting DT_RUNPATH=$ORIGIN,
+post-build change to the binary is a patchelf step setting DT_RPATH=$ORIGIN,
 matching every other library in this archive.
 
 Source code

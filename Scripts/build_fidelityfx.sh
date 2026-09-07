@@ -176,7 +176,12 @@ if [ "${#PATCH_FILES[@]}" -gt 0 ]; then
 else
     PATCH_HASH="no-patches"
 fi
-STAMP_CONTENT="$FIDELITYFX_COMMIT sc=$FFX_SC_COMMIT dxc=$DXC_COMMIT patches=$PATCH_HASH"
+# Bumped whenever the post-build steps (patchelf, NEEDED rewrite) change in a
+# way that alters the staged library, so a cached tree built before the change
+# is rebuilt instead of re-used: the upstream version alone would still match.
+# Rev 2: DT_RPATH instead of DT_RUNPATH (CometWorks/linux-compat#45).
+STAGING_REV="2"
+STAMP_CONTENT="$FIDELITYFX_COMMIT sc=$FFX_SC_COMMIT dxc=$DXC_COMMIT patches=$PATCH_HASH staging$STAGING_REV"
 
 if [ "$PRINT_STAMP" = "1" ]; then
     printf '%s\n' "$STAMP_CONTENT"
@@ -576,13 +581,13 @@ echo "==> Staging FidelityFX into $LIBRARIES_SE2_DIR"
 install -m 0755 "$OBJ_DIR/libamd_fidelityfx_loader_dx12.so" \
     "$LIBRARIES_SE2_DIR/libamd_fidelityfx_loader_dx12.so"
 
-# ---- patch DT_RUNPATH=$ORIGIN -----------------------------------------------
+# ---- patch DT_RPATH=$ORIGIN -----------------------------------------------
 # Parity with the vkd3d-proton and DXVK payloads. This library has no NEEDED
 # entry on its siblings, but it dlopens libvkd3d-proton-d3d12.so for
 # D3D12SerializeRootSignature when the caller did not load it under that name.
 
-echo "==> Patching DT_RUNPATH=\$ORIGIN onto the FidelityFX lib"
-patchelf --set-rpath '$ORIGIN' "$LIBRARIES_SE2_DIR/libamd_fidelityfx_loader_dx12.so"
+echo "==> Patching DT_RPATH=\$ORIGIN onto the FidelityFX lib"
+patchelf --force-rpath --set-rpath '$ORIGIN' "$LIBRARIES_SE2_DIR/libamd_fidelityfx_loader_dx12.so"
 
 # ---- update cache stamp -----------------------------------------------------
 

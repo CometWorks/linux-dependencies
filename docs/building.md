@@ -29,7 +29,7 @@ What each group is for:
 | `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxi-dev`, `libxfixes-dev`, `libxrandr-dev`, `libxrender-dev`, `libxss-dev`, `libxtst-dev` | SDL3's X11 video driver — see below |
 | `libwayland-dev`, `wayland-protocols`, `libdecor-0-dev`, `libxkbcommon-dev`, `libegl-dev`, `libdrm-dev`, `libgbm-dev` | SDL3's Wayland and KMSDRM video drivers — see below |
 | `libpulse-dev`, `libasound2-dev`, `libpipewire-0.3-dev` | OpenAL's audio backends — see below |
-| `patchelf`, `binutils` | `DT_RUNPATH=$ORIGIN` patching and the `readelf` verification |
+| `patchelf`, `binutils` | `DT_RPATH=$ORIGIN` patching and the `readelf` verification |
 | `curl`, `tar`, `git` | Fetching sources |
 | .NET SDK | Steamworks.NET |
 
@@ -256,9 +256,12 @@ suppressing something and the library now depends on a host package. Do not
 just widen the allow-list: find the flag that regressed, because that
 dependency will be missing on users' machines.
 
-**`expected DT_RUNPATH='$ORIGIN', got ''`** — the `patchelf` step did not take
+**`expected DT_RPATH='$ORIGIN', got ''`** — the `patchelf` step did not take
 effect. Check that `patchelf` is a working build and is being invoked on the
 real versioned file, not a symlink.
+
+**`DT_RUNPATH is still present`** — `patchelf` ran without `--force-rpath`, so
+it wrote the entry the loader consults only after `LD_LIBRARY_PATH`.
 
 **`ERROR: dependency staging is incomplete.`** — a sub-build succeeded but did
 not produce everything `build.sh` expects. The lines above it name each missing

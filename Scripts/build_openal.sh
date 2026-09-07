@@ -61,7 +61,12 @@ OPENAL_SRC_DIR="$BUILD_DIR/openal-soft-$OPENAL_VERSION"
 OPENAL_BUILD_DIR="$OPENAL_SRC_DIR/_build"
 STAGE_DIR="$OPENAL_BUILD_DIR/_install"
 STAMP_FILE="$BUILD_DIR/openal.stamp"
-STAMP_CONTENT="$OPENAL_VERSION"
+# Bumped whenever the post-build steps (patchelf, NEEDED rewrite) change in a
+# way that alters the staged library, so a cached tree built before the change
+# is rebuilt instead of re-used: the upstream version alone would still match.
+# Rev 2: DT_RPATH instead of DT_RUNPATH (CometWorks/linux-compat#45).
+STAGING_REV="2"
+STAMP_CONTENT="$OPENAL_VERSION staging$STAGING_REV"
 
 OPENAL_URL="https://openal-soft.org/openal-releases/openal-soft-$OPENAL_VERSION.tar.bz2"
 
@@ -222,13 +227,13 @@ if [ "$SONAME" != "$EXPECTED_SONAME" ]; then
     exit 1
 fi
 
-# ---- patch DT_RUNPATH=$ORIGIN ----------------------------------------------
+# ---- patch DT_RPATH=$ORIGIN ----------------------------------------------
 # Parity with the FFmpeg and DXVK payloads, so the library resolves anything
 # it needs from its own directory rather than the host's search path.
 
-echo "==> Patching DT_RUNPATH=\$ORIGIN onto libopenal"
+echo "==> Patching DT_RPATH=\$ORIGIN onto libopenal"
 REAL_LIB="$(readlink -f "$LIB_SRC/libopenal.so")"
-patchelf --set-rpath '$ORIGIN' "$REAL_LIB"
+patchelf --force-rpath --set-rpath '$ORIGIN' "$REAL_LIB"
 
 # ---- verify runtime dependencies -------------------------------------------
 # Wider than FFmpeg's allow-list: OpenAL is C++, so libstdc++ and libgcc_s are

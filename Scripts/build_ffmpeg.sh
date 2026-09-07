@@ -104,7 +104,12 @@ FFMPEG_CONFIGURE_FLAGS=(
 )
 
 CONFIG_HASH="$(printf '%s\n' "${FFMPEG_CONFIGURE_FLAGS[@]}" | sha256sum | cut -d' ' -f1)"
-STAMP_CONTENT="$FFMPEG_VERSION flags=$CONFIG_HASH"
+# Bumped whenever the post-build steps (patchelf, NEEDED rewrite) change in a
+# way that alters the staged library, so a cached tree built before the change
+# is rebuilt instead of re-used: the upstream version alone would still match.
+# Rev 2: DT_RPATH instead of DT_RUNPATH (CometWorks/linux-compat#45).
+STAGING_REV="2"
+STAMP_CONTENT="$FFMPEG_VERSION flags=$CONFIG_HASH staging$STAGING_REV"
 
 if [ "$PRINT_STAMP" = "1" ]; then
     printf '%s\n' "$STAMP_CONTENT"
@@ -250,7 +255,7 @@ mkdir -p "$STAGE_DIR"
 # FFMPEG_CONFIGURE_FLAGS) so that --print-stamp can hash it without touching
 # the source tree; only --prefix, which is a build-tree path, is added here.
 #
-# NOTE: DT_RUNPATH=$ORIGIN is NOT injected via --extra-ldsoflags -
+# NOTE: DT_RPATH=$ORIGIN is NOT injected via --extra-ldsoflags -
 # see the post-install `patchelf` step below for the rationale. Briefly:
 # passing -Wl,-rpath,'$ORIGIN' through bash -> FFmpeg's configure (sh) ->
 # config.mak -> make -> recipe shell requires 3 layers of $-escaping to
@@ -322,17 +327,28 @@ for name in "${!EXPECTED_SOVER[@]}"; do
     fi
 done
 
-# ---- patch DT_RUNPATH=$ORIGIN onto each produced .so -----------------------
+# ---- patch DT_RPATH=$ORIGIN onto each produced .so -----------------------
 # This is what makes the FFmpeg libs self-locating once they ship inside a
 # consumer's Bin/ folder alongside its apphost. Without it, the inter-FFmpeg
 # NEEDED entries (libavformat -> libavcodec.so.62 -> libavutil.so.60 /
 # libswresample.so.6, etc.) are resolved by glibc's default search path,
 # which does NOT include the executable's own directory - so they would
 # either miss entirely or, worse, silently bind to a different-ABI FFmpeg
-# version from the host's /etc/ld.so.cache. With DT_RUNPATH=$ORIGIN burned
+# version from the host's /etc/ld.so.cache. With DT_RPATH=$ORIGIN burned
 # in, ld.so locates each FFmpeg lib's siblings via the loaded lib's own
 # directory, and the consumer's launcher does not need to prepend Bin/ to
 # LD_LIBRARY_PATH.
+#
+# It has to be the legacy DT_RPATH (patchelf --force-rpath), not the newer
+# DT_RUNPATH that patchelf and the linker emit by default. glibc searches
+# DT_RPATH before LD_LIBRARY_PATH but DT_RUNPATH only after it. Steam starts
+# games with LD_LIBRARY_PATH covering its runtime plus every directory from
+# the host's ld.so.conf, so with DT_RUNPATH a host that has an unversioned
+# /lib/x86_64-linux-gnu/libavutil.so (the ffmpeg -dev packages on Debian,
+# every Arch install) satisfied our bare-name NEEDED entries from the system
+# FFmpeg and failed with "version `LIBAVUTIL_60' not found"
+# (CometWorks/linux-compat#45). DT_RPATH cannot be overridden from the
+# environment, which is exactly what an ABI-pinned bundle wants.
 #
 # Why patchelf instead of -Wl,-rpath,$ORIGIN via configure: passing the
 # literal token "$ORIGIN" through bash -> FFmpeg's configure (sh) ->
@@ -343,11 +359,11 @@ done
 # "260291ORIGIN"). patchelf rewrites the .dynamic section after the link
 # is complete and is therefore immune to all the upstream escaping
 # variability.
-echo "==> Patching DT_RUNPATH=\$ORIGIN onto FFmpeg libs"
+echo "==> Patching DT_RPATH=\$ORIGIN onto FFmpeg libs"
 for name in "${!EXPECTED_SOVER[@]}"; do
     sover="${EXPECTED_SOVER[$name]}"
     f="$LIB_SRC/lib${name}.so.${sover}"
-    patchelf --set-rpath '$ORIGIN' "$f"
+    patchelf --force-rpath --set-rpath '$ORIGIN' "$f"
 done
 
 # Verify the .so files don't depend on anything beyond glibc / vdso / loader.
@@ -378,25 +394,29 @@ if [ "$DEP_LEAK" = "1" ]; then
     exit 1
 fi
 
-# Verify the literal token "$ORIGIN" actually landed in DT_RUNPATH on every
+# Verify the literal token "$ORIGIN" actually landed in DT_RPATH on every
 # FFmpeg lib. If the patchelf step above is ever broken (e.g. swapped to a
 # patchelf build with a regression, accidentally removed, or invoked on the
 # wrong file), this assertion fails loudly here rather than letting us ship
 # libs that silently need LD_LIBRARY_PATH again.
-echo "==> Verifying DT_RUNPATH=\$ORIGIN on built libs"
-RUNPATH_MISSING=0
+echo "==> Verifying DT_RPATH=\$ORIGIN on built libs"
+RPATH_MISSING=0
 for name in "${!EXPECTED_SOVER[@]}"; do
     sover="${EXPECTED_SOVER[$name]}"
     f="$LIB_SRC/lib${name}.so.${sover}"
-    runpath="$(readelf -d "$f" 2>/dev/null | awk '/\(RUNPATH\)/ {match($0, /\[.*\]/); print substr($0, RSTART+1, RLENGTH-2)}')"
-    if [ "$runpath" != '$ORIGIN' ]; then
-        echo "  lib${name}.so.${sover}: expected DT_RUNPATH='\$ORIGIN', got '${runpath}'" >&2
-        RUNPATH_MISSING=1
+    rpath="$(readelf -d "$f" 2>/dev/null | awk '/\(RPATH\)/ {match($0, /\[.*\]/); print substr($0, RSTART+1, RLENGTH-2)}')"
+    if [ "$rpath" != '$ORIGIN' ]; then
+        echo "  lib${name}.so.${sover}: expected DT_RPATH='\$ORIGIN', got '${rpath}'" >&2
+        RPATH_MISSING=1
+    fi
+    if readelf -d "$f" 2>/dev/null | grep -q '(RUNPATH)'; then
+        echo "  lib${name}.so.${sover}: DT_RUNPATH is still present; it is searched only after LD_LIBRARY_PATH" >&2
+        RPATH_MISSING=1
     fi
 done
-if [ "$RUNPATH_MISSING" = "1" ]; then
-    echo "ERROR: at least one FFmpeg lib is missing DT_RUNPATH=\$ORIGIN." >&2
-    echo "Re-check the --extra-ldsoflags escaping in CONFIGURE_FLAGS." >&2
+if [ "$RPATH_MISSING" = "1" ]; then
+    echo "ERROR: at least one FFmpeg lib is missing DT_RPATH=\$ORIGIN." >&2
+    echo "Re-check the patchelf --force-rpath step above." >&2
     exit 1
 fi
 
@@ -417,7 +437,7 @@ echo "==> Staging outputs into $LIBRARIES_DIR"
 # library ships as a single real file under its bare name (libavcodec.so).
 # The SONAMEs inside the binaries stay as upstream produced them, but the
 # cross-FFmpeg NEEDED entries are rewritten below to the bare names so
-# DT_RUNPATH=$ORIGIN keeps resolving siblings next to the loaded library.
+# DT_RPATH=$ORIGIN keeps resolving siblings next to the loaded library.
 for name in "${!EXPECTED_SOVER[@]}"; do
     sover="${EXPECTED_SOVER[$name]}"
     install -m 0755 "$LIB_SRC/lib${name}.so.${sover}" "$LIBRARIES_DIR/lib${name}.so"

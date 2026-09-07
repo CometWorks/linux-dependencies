@@ -117,7 +117,12 @@ fi
 #   1: the two .so files
 #   2: + the installed D3D12 headers (consumed by build_fidelityfx.sh)
 ARTEFACT_REV="2"
-STAMP_CONTENT="$VKD3D_PROTON_COMMIT patches=$PATCH_HASH artefacts$ARTEFACT_REV"
+# Bumped whenever the post-build steps (patchelf, NEEDED rewrite) change in a
+# way that alters the staged library, so a cached tree built before the change
+# is rebuilt instead of re-used: the upstream version alone would still match.
+# Rev 2: DT_RPATH instead of DT_RUNPATH (CometWorks/linux-compat#45).
+STAGING_REV="2"
+STAMP_CONTENT="$VKD3D_PROTON_COMMIT patches=$PATCH_HASH artefacts$ARTEFACT_REV staging$STAGING_REV"
 
 if [ "$PRINT_STAMP" = "1" ]; then
     printf '%s\n' "$STAMP_CONTENT"
@@ -256,14 +261,14 @@ for lib in "${EXPECTED_LIBS[@]}"; do
     install -m 0755 "$src" "$LIBRARIES_SE2_DIR/$lib"
 done
 
-# ---- patch DT_RUNPATH=$ORIGIN onto each .so ---------------------------------
+# ---- patch DT_RPATH=$ORIGIN onto each .so ---------------------------------
 # Parity with the FFmpeg and DXVK payloads: ld.so resolves any sibling NEEDED
 # entries (d3d12 -> d3d12core) via the loaded lib's own directory, so the
 # consumer's launcher doesn't need to manipulate LD_LIBRARY_PATH.
 
-echo "==> Patching DT_RUNPATH=\$ORIGIN onto vkd3d-proton libs"
+echo "==> Patching DT_RPATH=\$ORIGIN onto vkd3d-proton libs"
 for lib in "${EXPECTED_LIBS[@]}"; do
-    patchelf --set-rpath '$ORIGIN' "$LIBRARIES_SE2_DIR/$lib"
+    patchelf --force-rpath --set-rpath '$ORIGIN' "$LIBRARIES_SE2_DIR/$lib"
 done
 
 # ---- update cache stamp -----------------------------------------------------

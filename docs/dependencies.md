@@ -39,7 +39,7 @@ first-party source.
 name (the archives carry no symlinks and no version-suffixed filenames).
 The SONAMEs inside the binaries stay as upstream produced them
 (`libavcodec.so.62`, …), but the cross-FFmpeg `NEEDED` entries are rewritten
-to the bare names at staging time so `DT_RUNPATH=$ORIGIN` resolves siblings
+to the bare names at staging time so `DT_RPATH=$ORIGIN` resolves siblings
 against the files actually shipped.
 
 **Source:** `https://ffmpeg.org/releases/ffmpeg-8.1.tar.xz`, downloaded and
@@ -92,7 +92,7 @@ pointer accurate.
 ### Post-build verification
 
 1. **SOVERSION check** against the `EXPECTED_SOVER` table.
-2. **`patchelf --set-rpath '$ORIGIN'`** on each library. This is done as a
+2. **`patchelf --force-rpath --set-rpath '$ORIGIN'`** on each library. This is done as a
    post-build rewrite rather than via `--extra-ldsoflags` because passing the
    literal `$ORIGIN` token through bash → FFmpeg's `configure` (sh) →
    `config.mak` → make → the recipe shell needs three layers of `$`-escaping
@@ -103,7 +103,7 @@ pointer accurate.
 3. **`ldd` allow-list** — anything outside glibc, libz and the FFmpeg
    libraries themselves fails the build, which catches a disable flag that
    stopped working after an upstream change.
-4. **`readelf` re-check** that `DT_RUNPATH` really is `$ORIGIN`, so a broken or
+4. **`readelf` re-check** that `DT_RPATH` really is `$ORIGIN`, so a broken or
    missing `patchelf` step fails loudly instead of shipping libraries that
    silently need `LD_LIBRARY_PATH`.
 
@@ -134,7 +134,7 @@ tarball step, since only the installed `.so` files are wanted.
 
 The output `.so` files are located with `find` rather than a hard-coded path,
 so an upstream rearrangement (`usr/lib64/`, a multiarch subdirectory) does not
-silently break staging. They then get the same `DT_RUNPATH=$ORIGIN` treatment
+silently break staging. They then get the same `DT_RPATH=$ORIGIN` treatment
 as the FFmpeg libraries.
 
 ### The patch series
@@ -184,7 +184,7 @@ same build is staged into **both** game archives as `libSDL3.so`. DXVK and the
 SDL3 it was compiled against are then always a matched set.
 
 **Produces:** `libSDL3.so` — the real file under the bare name, with
-`DT_RUNPATH=$ORIGIN`, in the SE1 and SE2 archives (identical bytes). The
+`DT_RPATH=$ORIGIN`, in the SE1 and SE2 archives (identical bytes). The
 binary is unmodified upstream SDL3; no patch series applies to it.
 
 **The SONAME matters here.** The shipped file is `libSDL3.so`, but DXVK
@@ -414,7 +414,7 @@ Everything is compiled with `-fvisibility=hidden`; only the five `ffx_api`
 entry points carry default visibility, and the build asserts that all five are
 exported before staging. The library is linked with `-Wl,--no-undefined`, so a
 missing symbol is a link error here rather than a `dlopen` failure inside the
-game, and gets `DT_RUNPATH=$ORIGIN` like the other payloads.
+game, and gets `DT_RPATH=$ORIGIN` like the other payloads.
 
 ### Shaders
 
@@ -523,7 +523,7 @@ hard-requires that specific audio stack.
 The **SONAME is asserted** to be `libopenal.so.1`. The shipped file is the
 bare `libopenal.so` either way, but a SONAME bump signals an upstream
 major-version (ABI) change that the consumers should review rather than pick
-up silently. `DT_RUNPATH=$ORIGIN` is patched on and re-checked, as for
+up silently. `DT_RPATH=$ORIGIN` is patched on and re-checked, as for
 FFmpeg and DXVK.
 
 ---

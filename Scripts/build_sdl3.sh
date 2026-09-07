@@ -260,15 +260,15 @@ if [ "$SONAME" != "$EXPECTED_SONAME" ]; then
     exit 1
 fi
 
-# ---- patch DT_RUNPATH=$ORIGIN ----------------------------------------------
+# ---- patch DT_RPATH=$ORIGIN ----------------------------------------------
 # Parity with the FFmpeg, DXVK and OpenAL payloads. Patch a private copy so
 # the prefix that DXVK compiles against stays exactly as installed.
 
 STAGE_LIB="$BUILD_DIR/libSDL3.so.staged"
 install -m 0755 "$REAL_LIB" "$STAGE_LIB"
 
-echo "==> Patching DT_RUNPATH=\$ORIGIN onto libSDL3"
-patchelf --set-rpath '$ORIGIN' "$STAGE_LIB"
+echo "==> Patching DT_RPATH=\$ORIGIN onto libSDL3"
+patchelf --force-rpath --set-rpath '$ORIGIN' "$STAGE_LIB"
 
 # ---- verify runtime dependencies -------------------------------------------
 # X11, Wayland, xkbcommon, libdecor, libdrm/gbm, the audio backends and Vulkan
