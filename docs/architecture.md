@@ -126,13 +126,13 @@ always a visible commit.
 Each build script asserts its own outputs before staging them: FFmpeg checks
 the SOVERSIONs against a table and runs an `ldd` allow-list to catch a
 configure flag that leaked an unwanted host dependency; both FFmpeg and DXVK
-verify that `DT_RUNPATH=$ORIGIN` actually landed in the ELF header. `build.sh`
+verify that `DT_RPATH=$ORIGIN` actually landed in the ELF header. `build.sh`
 then re-checks that every expected file exists before packaging.
 
 The point is that a mistake surfaces here, with a clear message, rather than as
 a `DllNotFoundException` inside Space Engineers three repos downstream.
 
-### `DT_RUNPATH=$ORIGIN` on every native library
+### `DT_RPATH=$ORIGIN` on every native library
 
 The shipped libraries reference each other (`libavformat` needs
 `libavcodec`, which needs `libavutil`). Without an rpath, glibc resolves
@@ -140,9 +140,21 @@ those through the system search path, which does not include the
 executable's own directory — so they would either fail to load or, worse,
 silently bind to a different-ABI FFmpeg from the host's `ld.so.cache`.
 
-Baking `$ORIGIN` into `DT_RUNPATH` makes each library find its siblings next
+Baking `$ORIGIN` into `DT_RPATH` makes each library find its siblings next
 to itself, which means the consumer's launcher does not have to manipulate
-`LD_LIBRARY_PATH` at all. Because the archives carry only bare, unversioned
+`LD_LIBRARY_PATH` at all.
+
+It is the legacy `DT_RPATH`, written with `patchelf --force-rpath`, rather
+than the `DT_RUNPATH` that linkers and `patchelf` emit by default. glibc
+searches `DT_RPATH` before `LD_LIBRARY_PATH` and `DT_RUNPATH` only after it.
+Steam launches games with `LD_LIBRARY_PATH` covering its runtime plus every
+directory from the host's `ld.so.conf`, so with `DT_RUNPATH` a host that had
+an unversioned `libavutil.so` in `/lib/x86_64-linux-gnu` (the FFmpeg `-dev`
+packages on Debian, any Arch install) resolved the bare-name `NEEDED` entries
+to the system FFmpeg and failed with ``version `LIBAVUTIL_60' not found``
+([linux-compat#45](https://github.com/CometWorks/linux-compat/issues/45)).
+`DT_RPATH` cannot be overridden from the environment, which is what an
+ABI-pinned bundle needs. Because the archives carry only bare, unversioned
 file names, the built libraries' intra-bundle `NEEDED` entries are rewritten
 to those bare names at staging time — otherwise they would ask the loader
 for SONAME-named files that no longer ship.

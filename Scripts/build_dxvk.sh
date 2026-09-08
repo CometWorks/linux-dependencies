@@ -12,7 +12,7 @@
 # The archives carry no symlinks and no version-suffixed filenames, so only
 # these two real files are staged. libdxvk_d3d11's NEEDED reference to the
 # dxgi library is rewritten from the SONAME (libdxvk_dxgi.so.0) to the bare
-# file name so DT_RUNPATH=$ORIGIN keeps resolving it next to the library.
+# file name so DT_RPATH=$ORIGIN keeps resolving it next to the library.
 #
 # DXVK is built ONCE and the same patched binaries ship in both release
 # archives (SE1 and SE2) — see Patches/dxvk/README.md for what the series
@@ -109,7 +109,12 @@ if [ "${#PATCH_FILES[@]}" -gt 0 ]; then
 else
     PATCH_HASH="no-patches"
 fi
-STAMP_CONTENT="$DXVK_VERSION patches=$PATCH_HASH"
+# Bumped whenever the post-build steps (patchelf, NEEDED rewrite) change in a
+# way that alters the staged library, so a cached tree built before the change
+# is rebuilt instead of re-used: the upstream version alone would still match.
+# Rev 2: DT_RPATH instead of DT_RUNPATH (CometWorks/linux-compat#45).
+STAGING_REV="2"
+STAMP_CONTENT="$DXVK_VERSION patches=$PATCH_HASH staging$STAGING_REV"
 
 if [ "$PRINT_STAMP" = "1" ]; then
     printf '%s\n' "$STAMP_CONTENT"
@@ -253,15 +258,15 @@ for lib in "${EXPECTED_LIBS[@]}"; do
         "$LIBRARIES_DIR/$lib"
 done
 
-# ---- patch DT_RUNPATH=$ORIGIN onto each .so --------------------------------
-# Parity with the FFmpeg payload: with DT_RUNPATH=$ORIGIN baked in, ld.so
+# ---- patch DT_RPATH=$ORIGIN onto each .so --------------------------------
+# Parity with the FFmpeg payload: with DT_RPATH=$ORIGIN baked in, ld.so
 # resolves any cross-DXVK NEEDED entries (e.g. libdxvk_d3d11 -> libdxvk_dxgi)
 # via the loaded lib's own directory, so the consumer's launcher doesn't need
 # to prepend Bin/ to LD_LIBRARY_PATH.
 
-echo "==> Patching DT_RUNPATH=\$ORIGIN onto DXVK libs"
+echo "==> Patching DT_RPATH=\$ORIGIN onto DXVK libs"
 for lib in "${EXPECTED_LIBS[@]}"; do
-    patchelf --set-rpath '$ORIGIN' "$LIBRARIES_DIR/$lib"
+    patchelf --force-rpath --set-rpath '$ORIGIN' "$LIBRARIES_DIR/$lib"
 done
 
 # ---- update cache stamp ----------------------------------------------------

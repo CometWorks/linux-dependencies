@@ -169,7 +169,7 @@ jobs:
           # cmake/ninja-build/python3 -> the DirectX Shader Compiler
           #          (Scripts/build_dxc.sh). ubuntu-24.04's cmake 3.28 clears
           #          the >= 3.20 floor DXC needs.
-          # patchelf/binutils -> DT_RUNPATH patching + readelf verification
+          # patchelf/binutils -> DT_RPATH patching + readelf verification
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config make cmake python3 curl tar git \
             nasm patchelf binutils zlib1g-dev \

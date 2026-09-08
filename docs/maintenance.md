@@ -274,7 +274,7 @@ deleted; they age out on their own after a week unused.
 * [ ] `./build.sh` succeeds from a clean tree (`--clean`)
 * [ ] The dependency's stamp changed, so the CI cache is invalidated
       (`./Scripts/build_<dep>.sh --print-stamp` before and after)
-* [ ] The `ldd` allow-list and `DT_RUNPATH` assertions pass
+* [ ] The `ldd` allow-list and `DT_RPATH` assertions pass
 * [ ] `EXPECTED_FILES` in `build.sh` matches what was produced
 * [ ] `docs/dependencies.md` version table updated
 * [ ] `docs/release-archive.md` file list updated if any filename changed

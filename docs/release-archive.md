@@ -69,9 +69,12 @@ LICENSES/SDL3-README.txt
   built libraries' cross-references (libavformat → libavcodec → libavutil,
   libdxvk_d3d11 → libdxvk_dxgi) are rewritten with
   `patchelf --replace-needed` at staging time, so together with
-  `DT_RUNPATH=$ORIGIN` they resolve against the files actually present.
-* **Every native `.so` has `DT_RUNPATH=$ORIGIN`**, so the libraries find each
+  `DT_RPATH=$ORIGIN` they resolve against the files actually present.
+* **Every native `.so` has `DT_RPATH=$ORIGIN`**, so the libraries find each
   other next to themselves and no `LD_LIBRARY_PATH` manipulation is needed.
+  It is `DT_RPATH`, not `DT_RUNPATH`: the loader searches it before
+  `LD_LIBRARY_PATH`, so a launcher that sets that variable (Steam does)
+  cannot redirect the bundle to a system copy.
 * **The FFmpeg libraries depend only on glibc and libz.** Verified by an `ldd`
   allow-list at build time.
 * **`libSDL3.so` is loaded by file name, resolved by SONAME.** The file is
@@ -147,7 +150,7 @@ ones. That means `libfmodstudio.so`'s internal `NEEDED` entry still
 references the upstream SONAME `libfmod.so.14`, which no shipped file
 carries: **the consumer must load `libfmod.so` before `libfmodstudio.so`**
 (the already-loaded library then satisfies the reference by SONAME). The
-built libraries carry `DT_RUNPATH=$ORIGIN` and bare-name `NEEDED` entries as
+built libraries carry `DT_RPATH=$ORIGIN` and bare-name `NEEDED` entries as
 in the SE1 archive. The SE2 native wrappers (`libVRage.*.Native.so`) are
 **not** in this archive; like the SE1 wrappers, they come from
 [CometWorks/linux-native-wrappers](https://github.com/CometWorks/linux-native-wrappers).
