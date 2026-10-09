@@ -1,0 +1,16 @@
+diff --git a/libs/vkd3d/swapchain.c b/libs/vkd3d/swapchain.c
+index 5f2e9355..3fc2f410 100644
+--- a/libs/vkd3d/swapchain.c
++++ b/libs/vkd3d/swapchain.c
+@@ -3436,7 +3436,10 @@ static void dxgi_vk_swap_chain_update_frame_statistics(struct dxgi_vk_swap_chain
+ {
+     uint64_t time;
+ 
+-    if (chain->present.timing)
++    /* The present task may have destroyed the swapchain without recreating it yet
++     * (OUT_OF_DATE retries exhausted, occluded window, failed recreate) and still
++     * queued a wait entry. Polling a null swapchain crashes the NVIDIA driver. */
++    if (chain->present.timing && chain->present.vk_swapchain)
+     {
+         dxgi_vk_swap_chain_poll_past_presentation(chain);
+         if (chain->frame_statistics.count < present_count && present_id)
