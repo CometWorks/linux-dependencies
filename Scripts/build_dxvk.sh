@@ -47,7 +47,7 @@
 # here. Nothing from SDL3 ends up in the release archives.
 #
 # Env-var overrides (defaults shown):
-#   DXVK_VERSION  = 3.0.2
+#   DXVK_VERSION  = 3.1.1
 #   DXVK_REPO     = https://github.com/doitsujin/dxvk.git
 #   BUILD_DIR     = <repo>/build
 #   LIBRARIES_DIR = $BUILD_DIR/Libraries
@@ -62,7 +62,7 @@
 
 set -euo pipefail
 
-DXVK_VERSION="${DXVK_VERSION:-3.0.2}"
+DXVK_VERSION="${DXVK_VERSION:-3.1.1}"
 DXVK_REPO="${DXVK_REPO:-https://github.com/doitsujin/dxvk.git}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -88,7 +88,7 @@ for arg in "$@"; do
     case "$arg" in
         --clean)       CLEAN=1 ;;
         --print-stamp) PRINT_STAMP=1 ;;
-        -h|--help) sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,61p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
@@ -165,7 +165,9 @@ else
     echo "==> Re-using cached clone at $DXVK_SRC_DIR"
     # A previous run left the series applied, so discard those edits before
     # checking the (possibly new) tag out — git refuses to switch otherwise.
+    # Submodules too: a patch into a submodule blocks its update to the new pin.
     git -C "$DXVK_SRC_DIR" checkout -- .
+    git -C "$DXVK_SRC_DIR" submodule foreach --recursive --quiet 'git checkout -- .'
     git -C "$DXVK_SRC_DIR" fetch --depth 1 origin "tag" "v$DXVK_VERSION" || true
     git -C "$DXVK_SRC_DIR" -c advice.detachedHead=false checkout "v$DXVK_VERSION"
     git -C "$DXVK_SRC_DIR" submodule update --init --recursive --depth 1

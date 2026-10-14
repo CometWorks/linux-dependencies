@@ -11,7 +11,7 @@ are shared byte-identically between the two game archives.
 | Dependency | Archives | Version / pin | Licence | Built by |
 | --- | --- | --- | --- | --- |
 | FFmpeg | SE1 | 8.1 (release tarball) | LGPL-2.1-or-later | `Scripts/build_ffmpeg.sh` |
-| DXVK Native + `Patches/dxvk/` series | both | tag `v3.0.2` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
+| DXVK Native + `Patches/dxvk/` series | both | tag `v3.1.1` + patch-series hash | zlib | `Scripts/build_dxvk.sh` |
 | SDL3 | both | tag `release-3.4.12` | zlib | `Scripts/build_sdl3.sh` |
 | vkd3d-proton + `Patches/vkd3d-proton/` series | SE2 | commit `3dfc6f07…` + patch-series hash | LGPL-2.1 | `Scripts/build_vkd3d_proton.sh` |
 | DirectX Shader Compiler + `Patches/dxc/` series | SE2 | tag `v1.9.2607` (commit `0d3ee6b5…`) + patch-series hash | NCSA/LLVM Release License | `Scripts/build_dxc.sh` |
@@ -109,7 +109,7 @@ pointer accurate.
 
 ---
 
-## DXVK Native 3.0.2 (patched)
+## DXVK Native 3.1.1 (patched)
 
 **Produces:** `libdxvk_d3d11.so` and `libdxvk_dxgi.so` (bare names, no
 SONAME symlinks; `libdxvk_d3d11`'s `NEEDED` reference to the dxgi library is
@@ -117,7 +117,7 @@ rewritten from the SONAME to the bare name), built once with the
 [Patches/dxvk/](../Patches/dxvk/) series applied and shipped identically in
 both archives.
 
-**Source:** `https://github.com/doitsujin/dxvk.git` at tag `v3.0.2`, shallow
+**Source:** `https://github.com/doitsujin/dxvk.git` at tag `v3.1.1`, shallow
 clone with submodules, cached under `build/dxvk/`.
 
 **Consumed by:** Pulsar and the Space Engineers 2 Linux port. Magnetar is

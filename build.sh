@@ -25,7 +25,7 @@
 #   2. Scripts/build_sdl3.sh            SDL3 (libSDL3.so), staged into BOTH
 #                                       game staging trees; also supplies the
 #                                       headers the DXVK build compiles against
-#   3. Scripts/build_dxvk.sh            DXVK Native v3.0.2 + Patches/dxvk/
+#   3. Scripts/build_dxvk.sh            DXVK Native v3.1.1 + Patches/dxvk/
 #                                       (libdxvk_d3d11.so + libdxvk_dxgi.so)
 #   4. Scripts/build_vkd3d_proton.sh    vkd3d-proton (pinned commit) +
 #                                       Patches/vkd3d-proton/, staged straight
@@ -121,7 +121,7 @@ for arg in "$@"; do
         --no-package) DO_PACKAGE=0 ;;
         --only=*)     ONLY="${arg#--only=}" ;;
         --skip=*)     SKIP="${arg#--skip=}" ;;
-        -h|--help)    sed -n '2,65p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,89p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
