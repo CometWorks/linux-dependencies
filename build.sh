@@ -121,7 +121,7 @@ for arg in "$@"; do
         --no-package) DO_PACKAGE=0 ;;
         --only=*)     ONLY="${arg#--only=}" ;;
         --skip=*)     SKIP="${arg#--skip=}" ;;
-        -h|--help)    sed -n '2,65p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,89p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done

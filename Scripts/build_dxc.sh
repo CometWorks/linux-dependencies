@@ -101,7 +101,7 @@ for arg in "$@"; do
     case "$arg" in
         --clean)       CLEAN=1 ;;
         --print-stamp) PRINT_STAMP=1 ;;
-        -h|--help) sed -n '2,80p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,73p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "ERROR: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
