@@ -1,0 +1,13 @@
+diff --git a/Kits/FidelityFX/upscalers/fsr3/internal/ffx_fsr3upscaler.cpp b/Kits/FidelityFX/upscalers/fsr3/internal/ffx_fsr3upscaler.cpp
+index 287e09b..edf87e7 100644
+--- a/Kits/FidelityFX/upscalers/fsr3/internal/ffx_fsr3upscaler.cpp
++++ b/Kits/FidelityFX/upscalers/fsr3/internal/ffx_fsr3upscaler.cpp
+@@ -175,7 +175,7 @@ typedef union Fsr3UpscalerSecondaryUnion {
+ // Lanczos
+ static float lanczos2(float value)
+ {
+-    return abs(value) < FFX_EPSILON ? 1.f : (sinf(FFX_PI * value) / (FFX_PI * value)) * (sinf(0.5f * FFX_PI * value) / (0.5f * FFX_PI * value));
++    return fabsf(value) < FFX_EPSILON ? 1.f : (sinf(FFX_PI * value) / (FFX_PI * value)) * (sinf(0.5f * FFX_PI * value) / (0.5f * FFX_PI * value));
+ }
+ 
+ // Calculate halton number for index and base.
