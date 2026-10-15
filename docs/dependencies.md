@@ -450,7 +450,9 @@ friends), the AGS and PIX tracing paths (both `LoadLibraryW` Windows-only
 DLLs), Microsoft's MSVC-only `d3dx12.h` helpers, Win32 diagnostics, and two
 consequences of Linux `wchar_t` being 4 bytes rather than 2: every `SetName`
 call has to narrow to the D3D12 ABI's 2-byte `WCHAR`, and the private effect
-contexts outgrow the SDK's own size reservation.
+contexts outgrow the SDK's own size reservation. One upstream line also
+depends on MSVC overload rules: an unqualified `abs()` on a `float`, which
+GCC resolves to `int abs(int)`, broke the Lanczos lookup table AMD GPUs use.
 
 `D3D12SerializeRootSignature` was resolved through
 `GetModuleHandleW(L"D3D12.dll")`; it is now `dlopen`/`dlsym` against
