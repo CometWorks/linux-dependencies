@@ -95,6 +95,8 @@ Full documentation index: **[docs/README.md](docs/README.md)**
 
 ## Licence
 
-The build scripts in this repository are MIT-licensed (see [LICENSE](LICENSE)).
+The build scripts in this repository are licensed under AGPL-3.0 (see
+[LICENSE](LICENSE)).
+Please contact us for alternate licensing.
 The libraries they produce are covered by their own licences, collected in
 [Licenses/](Licenses/) and shipped inside the release archive as `LICENSES/`.
