@@ -1,3 +1,5 @@
+This patch was contributed by cheezecake-dev (PR #13) under the MIT License, see LICENSE-MIT.
+
 diff --git a/src/dxvk/dxvk_platform_exts.cpp b/src/dxvk/dxvk_platform_exts.cpp
 index 9f1ebbb..90e1891 100644
 --- a/src/dxvk/dxvk_platform_exts.cpp

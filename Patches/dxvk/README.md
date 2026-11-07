@@ -1,3 +1,4 @@
+<!-- Parts of this file were contributed by cheezecake-dev (PR #13) under the MIT License, see LICENSE-MIT. -->
 # DXVK patch series
 
 Patches in this directory are applied on top of the pinned upstream DXVK tag
